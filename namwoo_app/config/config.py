@@ -7,9 +7,9 @@ dotenv_path = os.path.join(basedir, '.env')
 
 if os.path.exists(dotenv_path):
     load_dotenv(dotenv_path=dotenv_path, override=True)
-    print(f"DEBUG [config.py]: Loaded .env from: {dotenv_path}")
+    print(f"DEBUG [config.py]: Loaded .env from: {dotenv_path}") # Keep your original print
 else:
-    print(f"WARNING: .env file not found at {dotenv_path}")
+    print(f"WARNING: .env file not found at {dotenv_path}") # Keep your original print
 
 class Config:
     # --- Flask App ---
@@ -27,7 +27,7 @@ class Config:
     # --- LLM Configuration ---
     LLM_PROVIDER = os.environ.get('LLM_PROVIDER', 'openai').lower()
     if LLM_PROVIDER not in ['openai', 'google']:
-        print(f"WARNING [Config]: Invalid LLM_PROVIDER '{LLM_PROVIDER}'. Defaulting to 'openai'.")
+        print(f"WARNING [Config]: Invalid LLM_PROVIDER '{LLM_PROVIDER}'. Defaulting to 'openai'.") # Keep your original print
         LLM_PROVIDER = 'openai'
 
     OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
@@ -104,25 +104,32 @@ class Config:
     DAMASCO_API_SECRET = os.environ.get('DAMASCO_API_SECRET')
 
     if not DAMASCO_API_SECRET:
-        print("WARNING [Config]: DAMASCO_API_SECRET is not set. Receiver endpoint will reject requests.")
+        print("WARNING [Config]: DAMASCO_API_SECRET is not set. Receiver endpoint will reject requests.") # Keep your original print
 
     # --- System Prompt for AI Assistant (from file) ---
     SYSTEM_PROMPT_FILE = os.path.join(basedir, 'data', 'system_prompt.txt')
     try:
         with open(SYSTEM_PROMPT_FILE, 'r', encoding='utf-8') as f:
             SYSTEM_PROMPT = f.read().strip()
-        print(f"INFO [Config]: Loaded system prompt from {SYSTEM_PROMPT_FILE}")
+        print(f"INFO [Config]: Loaded system prompt from {SYSTEM_PROMPT_FILE}") # Keep your original print
     except FileNotFoundError:
-        print(f"ERROR [Config]: system_prompt.txt not found at {SYSTEM_PROMPT_FILE}. Using fallback.")
+        print(f"ERROR [Config]: system_prompt.txt not found at {SYSTEM_PROMPT_FILE}. Using fallback.") # Keep your original print
         SYSTEM_PROMPT = "Default fallback system prompt content here." # Or load from os.environ.get('SYSTEM_PROMPT')
+
+    # ========== NEW CONFIGURATION FOR NAMDAMASCO LEAD API SERVICE CLIENT ==========
+    LEAD_CAPTURE_API_URL = os.environ.get('LEAD_CAPTURE_API_URL')
+    LEAD_CAPTURE_API_KEY = os.environ.get('LEAD_CAPTURE_API_KEY')
+    # Optional: Instructions for LLM after lead info capture (can be hardcoded in tool response too)
+    # DIRECT_PAYMENT_INSTRUCTIONS_AFTER_LEAD_CAPTURE = os.environ.get('DIRECT_PAYMENT_INSTRUCTIONS_AFTER_LEAD_CAPTURE', "Nuestro equipo se pondrá en contacto contigo en breve para finalizar los detalles del pago y envío/retiro.")
+    # ============================================================================
 
 # --- Config Sanity Check ---
 if __name__ != "__main__": # This runs when the module is imported
-    print(f"--- Config Initialized ---")
+    print(f"--- Config Initialized ---") # Keep your original print
     print(f"ENV: {Config.FLASK_ENV}, DEBUG={Config.DEBUG}, LLM Provider: {Config.LLM_PROVIDER}")
-    print(f"DB URI: {'SET' if Config.SQLALCHEMY_DATABASE_URI else 'MISSING'}")
-    print(f"Celery broker_url: {Config.broker_url}") # Using lowercase as defined in class
-    print(f"Celery result_backend: {Config.result_backend}") # Using lowercase
+    print(f"DB URI: {'SET' if Config.SQLALCHEMY_DATABASE_URI else 'MISSING'}") # Keep your original print for this project's DB
+    print(f"Celery broker_url: {Config.broker_url}") 
+    print(f"Celery result_backend: {Config.result_backend}") 
     print(f"Support Board URL: {Config.SUPPORT_BOARD_API_URL}")
     print(f"DM Bot User ID: {Config.SUPPORT_BOARD_DM_BOT_USER_ID}")
     print(f"Comment Bot Proxy User ID: {Config.COMMENT_BOT_PROXY_USER_ID}")
@@ -131,4 +138,7 @@ if __name__ != "__main__": # This runs when the module is imported
     print(f"WhatsApp Config Loaded: {'Yes' if Config.WHATSAPP_CLOUD_API_TOKEN else 'No'}")
     print(f"Damasco Receiver API URL: {Config.DAMASCO_RECEIVER_API_URL}")
     print(f"Damasco API Secret Loaded: {'Yes' if Config.DAMASCO_API_SECRET else 'No'}")
+    # Added print statements for the new config variables
+    print(f"Lead Capture API URL: {Config.LEAD_CAPTURE_API_URL if Config.LEAD_CAPTURE_API_URL else 'NOT SET'}")
+    print(f"Lead Capture API Key Set: {'Yes' if Config.LEAD_CAPTURE_API_KEY else 'No'}")
     print(f"--------------------")

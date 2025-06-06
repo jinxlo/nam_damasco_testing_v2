@@ -40,7 +40,8 @@ class Product(Base):
     branch_name = Column(String(255), index=True, nullable=True, comment="Branch name")
     
     # Financial and stock
-    price = Column(NUMERIC(12, 2), nullable=True)
+    price = Column(NUMERIC(12, 2), nullable=True, comment="Price, typically in primary currency (e.g., USD)")
+    price_bolivar = Column(NUMERIC(12, 2), nullable=True, comment="Price in Bolívares (Bs.)") # <<< NEW FIELD ADDED
     stock = Column(Integer, default=0, nullable=False) # Stock should have a default and be non-null
     
     # Embedding related fields
@@ -79,6 +80,7 @@ class Product(Base):
             "warehouse_name": self.warehouse_name,
             "branch_name": self.branch_name,
             "price": float(self.price) if self.price is not None else None,
+            "price_bolivar": float(self.price_bolivar) if self.price_bolivar is not None else None, # <<< NEW FIELD ADDED
             "stock": self.stock,
             "searchable_text_content": self.searchable_text_content,
             # "source_data_json": self.source_data_json, # Often too verbose for general dicts unless specifically requested
@@ -89,6 +91,8 @@ class Product(Base):
     def format_for_llm(self, include_stock_location: bool = True) -> str:
         """Formats product information for presentation by an LLM, prioritizing LLM summary."""
         price_str = f"${float(self.price):.2f}" if self.price is not None else "Precio no disponible"
+        # <<< OPTIONAL: Add price_bolivar display here >>>
+        price_bolivar_str = f" (Bs. {float(self.price_bolivar):.2f})" if self.price_bolivar is not None else ""
         
         current_description_text = ""
         if self.llm_summarized_description and self.llm_summarized_description.strip(): # Check if not empty
@@ -103,7 +107,7 @@ class Product(Base):
         base_info = (f"{self.item_name or 'Producto sin nombre'} "
                      f"(Marca: {self.brand or 'N/A'}, "
                      f"Categoría: {self.category or 'N/A'}). "
-                     f"{price_str}. {desc_str_for_llm}")
+                     f"{price_str}{price_bolivar_str}. {desc_str_for_llm}") # <<< MODIFIED to include price_bolivar_str
         
         if include_stock_location:
             stock_str = f"Stock: {self.stock if self.stock is not None else 'N/A'}"
@@ -167,6 +171,11 @@ class Product(Base):
         add_part(damasco_product_data.get("itemGroupName"))
         add_part(damasco_product_data.get("line"))
         
+        # Note: Numerical price fields like 'price' or 'priceBolivar' are generally NOT included
+        # in the text for semantic embedding, as their exact values change frequently and
+        # embeddings are more about the 'what' than precise, volatile numerical data.
+        # The current logic correctly omits them.
+
         if not parts_to_join:
             logger.warning(f"No text parts found to build embedding string for itemCode: {damasco_product_data.get('itemCode')}")
             return None 
