@@ -16,6 +16,10 @@ from ..services import openai_service
 from ..services import google_service
 # --- Import Support Board service if needed for error replies ---
 from ..services import support_board_service
+from ..services.support_board_service import (
+    send_order_confirmation_template,
+    route_conversation_to_sales,
+)
 # ------------------------------
 from ..config import Config
 from ..models.conversation_pause import ConversationPause # Assuming you have this for explicit pauses
@@ -94,6 +98,7 @@ def handle_support_board_webhook():
     triggering_message_id = data.get('message_id')
     new_user_message_text = data.get('message') # Will be used for tag checking
     conversation_source = data.get('conversation_source')
+    order_vars = data.get('order_confirmation_variables')  # Expect list of 8 vars
 
     if not all([sb_conversation_id, sender_user_id_str_from_payload, customer_user_id_str]):
         missing_keys = [k for k, v in {'conversation_id': sb_conversation_id, 'user_id': sender_user_id_str_from_payload, 'conversation_user_id': customer_user_id_str}.items() if v is None]
@@ -103,6 +108,18 @@ def handle_support_board_webhook():
     sb_conversation_id_str = str(sb_conversation_id)
     sender_user_id_str = str(sender_user_id_str_from_payload)
     customer_user_id_str = str(customer_user_id_str)
+
+    if order_vars and isinstance(order_vars, list) and len(order_vars) == 8:
+        send_order_confirmation_template(
+            user_id=customer_user_id_str,
+            conversation_id=sb_conversation_id_str,
+            variables=order_vars,
+        )
+        route_conversation_to_sales(sb_conversation_id_str)
+        return (
+            jsonify({"status": "ok", "message": "Order confirmation sent"}),
+            200,
+        )
 
     # --- Get Configured IDs ---
     DM_BOT_ID_STR = str(Config.SUPPORT_BOARD_DM_BOT_USER_ID) if Config.SUPPORT_BOARD_DM_BOT_USER_ID else None
