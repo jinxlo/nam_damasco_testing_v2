@@ -139,6 +139,44 @@ def get_openai_product_summary(
         logger.error(f"Unexpected error calling OpenAI for description summarization for '{item_name or 'Unknown'}': {e}", exc_info=True)
         return None
 
+
+def extract_customer_info_via_llm(message_text: str) -> Optional[Dict[str, Any]]:
+    """Extract structured customer info from a plain text message using OpenAI."""
+    global _chat_client
+    if not _chat_client:
+        logger.error("OpenAI client for chat not initialized. Cannot extract customer info.")
+        return None
+    prompt = f"""
+Extrae la siguiente información del mensaje del cliente en JSON estructurado:
+
+- nombre
+- apellido
+- cedula
+- telefono
+- correo
+- direccion
+- producto
+- precio
+
+Ejemplo del mensaje del cliente:
+\"\"\"{message_text}\"\"\"
+    """
+    try:
+        response = _chat_client.chat.completions.create(
+            model=current_app.config.get("OPENAI_CHAT_MODEL", DEFAULT_OPENAI_MODEL),
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=256,
+        )
+        content = response.choices[0].message.content if response.choices else None
+        if not content:
+            logger.error("OpenAI returned empty content when extracting customer info.")
+            return None
+        return json.loads(content)
+    except Exception as e:
+        logger.exception(f"Error extracting customer info via OpenAI: {e}")
+        return None
+
 # ===========================================================================
 # ========== MODIFIED LLM TOOL IMPLEMENTATION FUNCTIONS (for conversation_id) ==========
 # ===========================================================================

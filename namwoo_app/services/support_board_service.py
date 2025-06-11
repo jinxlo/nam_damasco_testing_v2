@@ -560,6 +560,21 @@ def send_order_confirmation_template(user_id: str, conversation_id: str, variabl
     return _call_sb_api(payload)
 
 
+def send_template_by_phone_number(phone_number: str, template_params: list):
+    """Send WhatsApp template using a raw phone number in international format."""
+    payload = {
+        "function": "messaging-platforms-send-template",
+        "source": {"source": "wa"},
+        "phone": phone_number,
+        "template": {
+            "name": "confirmacion_datos_cliente",
+            "language": "es",
+            "parameters": template_params,
+        },
+    }
+    return _call_sb_api(payload)
+
+
 def route_conversation_to_sales(conversation_id: str) -> None:
     """Assign conversation to the Sales department and disable the bot."""
     sales_department_id = Config.SUPPORT_BOARD_SALES_DEPARTMENT_ID

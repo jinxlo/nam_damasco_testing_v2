@@ -13,11 +13,13 @@ from sqlalchemy import text
 from ..utils import db_utils # Make sure this has: is_conversation_paused, pause_conversation_for_duration, (optional) get_pause_record
 # --- Import BOTH LLM Services ---
 from ..services import openai_service
+from ..services.openai_service import extract_customer_info_via_llm
 from ..services import google_service
 # --- Import Support Board service if needed for error replies ---
 from ..services import support_board_service
 from ..services.support_board_service import (
     send_order_confirmation_template,
+    send_template_by_phone_number,
     route_conversation_to_sales,
 )
 # ------------------------------
@@ -223,7 +225,32 @@ def handle_support_board_webhook():
         
         if is_implicitly_human_handled:
             return jsonify({"status": "ok", "message": "Implicit human takeover, bot will not reply"}), 200
-        
+
+        # If not paused and no human intervention, check if message includes full customer data
+        if new_user_message_text:
+            try:
+                customer_data = extract_customer_info_via_llm(new_user_message_text)
+            except Exception as info_err:
+                logger.exception(f"LLM extraction error for conv {sb_conversation_id_str}: {info_err}")
+                customer_data = None
+            required_keys = [
+                "nombre",
+                "apellido",
+                "cedula",
+                "telefono",
+                "correo",
+                "direccion",
+                "producto",
+                "precio",
+            ]
+            if customer_data and all(customer_data.get(k) for k in required_keys):
+                params = [customer_data[k] for k in required_keys]
+                phone = customer_data.get("telefono")
+                if phone:
+                    send_template_by_phone_number(phone_number=phone, template_params=params)
+                    route_conversation_to_sales(sb_conversation_id_str)
+                    return jsonify({"status": "ok", "message": "Template sent via phone"}), 200
+
         # If not paused and no human intervention, proceed with LLM
         provider = current_app.config.get('LLM_PROVIDER', 'openai').lower()
         logger.info(f"Conversation {sb_conversation_id_str} is not paused and no overriding human intervention. Triggering processing using LLM Provider: {provider}.")
