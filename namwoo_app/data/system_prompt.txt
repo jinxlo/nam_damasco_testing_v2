@@ -188,17 +188,17 @@ Eres NamDamascoTechno, un asistente virtual especializado en ventas de productos
 
 **LISTA INTERNA DE TIENDAS Y CIUDADES (whsName_API):**
 - Caracas: Almacen Principal SABANA GRANDE, Almacen Principal CCCT, Damasco La Trinidad
-- Valencia: Tienda VALENCIA CENTRO, Almacen SAN DIEGO
-- Maracay: Tienda MARACAY LAS DELICIAS
-- Cagua: Tienda CAGUA
-- Barquisimeto: Tienda BARQUISIMETO CENTRO
-- Maracaibo: Tienda MARACAIBO BELLA VISTA
-- Guatire: Tienda GUATIRE BUENAVENTURA
-- Lechería: Tienda LECHERIA C.C. Caribbean
-- Maturín: Tienda MATURIN CENTRO
-- Puerto Ordaz: Tienda PUERTO ORDAZ ALTA VISTA
-- Trujillo: Tienda TRUJILLO CENTRO
-- San Cristóbal: Tienda SAN CRISTOBAL BARRIO OBRERO
+- Valencia: Tienda VALENCIA CENTRO (Av. 103 Carabobo, Valencia. Tel 0412-3715859, horario 9:00 am - 6:00 pm), Almacen SAN DIEGO (Av Rojas Queipo entre Av. Bolívar y distribuidor Paseo Cabriales. Tel 04125136702)
+- Maracay: Tienda MARACAY LAS DELICIAS (Av. Bolívar, al lado del Aero Expresos y de la estación de servicio San Jacinto. Tel 0412-6452756, horario 9:00 am - 6:00 pm)
+- Cagua: Tienda CAGUA (Carretera Nacional Cagua La Villa, entre calle Las Acacias y Diego de Lozada. Tel 0412-6119852, horario 9:00 am - 6:00 pm)
+- Barquisimeto: Tienda BARQUISIMETO CENTRO (Av. Venezuela entre calles 10 y 11, Barquisimeto, Lara. Tel 0412-3167538, horario 9:00 am - 6:00 pm)
+- Maracaibo: Tienda MARACAIBO BELLA VISTA (Circunvalación 1, Av. 33 con calle 93, antiguo supermercado NASA. Tel 0412-6192424, horario 9:00 am - 6:00 pm)
+- Guatire: Tienda GUATIRE BUENAVENTURA (Av. Intercomunal frente al C.C. Buena Aventura Place. Tel 0412-3167516, horario 9:00 am - 6:00 pm)
+- Lechería: Tienda LECHERIA C.C. Caribbean (Av. Intercomunal Jorge Rodríguez, Edif Yaveth, sector Vistamar. Tel 0412-6192419, horario 9:00 am - 6:00 pm)
+- Maturín: Tienda MATURIN CENTRO (Av. Alirio Ugarte Pelayo, Maturín 6201, Monagas)
+- Puerto Ordaz: Tienda PUERTO ORDAZ ALTA VISTA (Urb. los Samanes, sector AltaVista, frente al centro medico Orinokia. Tel 0412-3715863, horario 9:00 am - 6:00 pm)
+- Trujillo: Tienda TRUJILLO CENTRO (Urbanización La plata, frente la redoma Las banderas al lado del banco Provincial, Valera. Horario 9:00 am - 6:00 pm)
+- San Cristóbal: Tienda SAN CRISTOBAL BARRIO OBRERO (Calle 14 con carrera 4 al lado de la iglesia de la Ermita, sector centro. Tel 0412-3167522, horario 9:00 am - 6:00 pm)
 - San Felipe: Tienda SAN FELIPE CENTRO
-- Puerto La Cruz: Tienda PUERTO LA CRUZ PLAZA MAYOR
+- Puerto La Cruz: Tienda PUERTO LA CRUZ PLAZA MAYOR (Calle Sucre con calle Libertad a pocos metros de la plaza Bolivar. Horario 9:00 am - 6:00 pm)
 - La Guaira: Tienda LA GUAIRA TERMINAL
