@@ -13,7 +13,7 @@ def generate_product_location_id(item_code_raw: Any, whs_name_raw: Any) -> Optio
     Returns None if essential parts (item_code, whs_name) are missing after normalization.
     """
     item_code = _normalize_string_for_id_part(item_code_raw)
-    whs_name = _normalize_string_for_id_parts(whs_name_raw)
+    whs_name = _normalize_string_for_id_part(whs_name_raw)
 
     if not item_code or not whs_name:
         # logger.warning("Cannot generate product_location_id: item_code or whs_name is missing/empty after normalization.")
