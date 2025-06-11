@@ -22,6 +22,8 @@ from ..services.support_board_service import (
     send_template_by_phone_number,
     route_conversation_to_sales,
 )
+# Text utilities
+from ..utils.text_utils import split_full_name
 # ------------------------------
 from ..config import Config
 from ..models.conversation_pause import ConversationPause # Assuming you have this for explicit pauses
@@ -231,25 +233,42 @@ def handle_support_board_webhook():
             try:
                 customer_data = extract_customer_info_via_llm(new_user_message_text)
             except Exception as info_err:
-                logger.exception(f"LLM extraction error for conv {sb_conversation_id_str}: {info_err}")
+                logger.exception(
+                    f"LLM extraction error for conv {sb_conversation_id_str}: {info_err}"
+                )
                 customer_data = None
             required_keys = [
-                "nombre",
-                "apellido",
+                "full_name",
                 "cedula",
                 "telefono",
                 "correo",
                 "direccion",
-                "producto",
-                "precio",
+                "productos",
+                "total",
             ]
             if customer_data and all(customer_data.get(k) for k in required_keys):
-                params = [customer_data[k] for k in required_keys]
-                phone = customer_data.get("telefono")
+                nombre, apellido = split_full_name(str(customer_data["full_name"]))
+                params = [
+                    str(nombre),
+                    str(apellido),
+                    str(customer_data["cedula"]).strip(),
+                    str(customer_data["telefono"]).strip(),
+                    str(customer_data["correo"]).strip(),
+                    str(customer_data["direccion"]).strip(),
+                    str(customer_data["productos"]).strip(),
+                    str(customer_data["total"]).strip(),
+                ]
+                phone = str(customer_data.get("telefono", "")).strip()
                 if phone:
-                    send_template_by_phone_number(phone_number=phone, template_params=params)
+                    send_template_by_phone_number(
+                        phone_number=phone,
+                        template_params=params,
+                    )
                     route_conversation_to_sales(sb_conversation_id_str)
-                    return jsonify({"status": "ok", "message": "Template sent via phone"}), 200
+                    return (
+                        jsonify({"status": "ok", "message": "Template sent via phone"}),
+                        200,
+                    )
 
         # If not paused and no human intervention, proceed with LLM
         provider = current_app.config.get('LLM_PROVIDER', 'openai').lower()

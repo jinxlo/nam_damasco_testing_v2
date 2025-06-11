@@ -149,14 +149,13 @@ def extract_customer_info_via_llm(message_text: str) -> Optional[Dict[str, Any]]
     prompt = f"""
 Extrae la siguiente información del mensaje del cliente en JSON estructurado:
 
-- nombre
-- apellido
+- full_name
 - cedula
 - telefono
 - correo
 - direccion
-- producto
-- precio
+- productos
+- total
 
 Ejemplo del mensaje del cliente:
 \"\"\"{message_text}\"\"\"
