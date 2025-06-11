@@ -72,6 +72,9 @@ def search_local_products(
             )
             if filter_stock:
                 q = q.filter(Product.stock > 0)
+
+            # Only return products that belong to the tech division
+            q = q.filter(Product.item_group_name == "DAMASCO TECNO")
             q = q.filter(
                 (1 - Product.embedding.cosine_distance(query_emb)) >= min_score
             )
