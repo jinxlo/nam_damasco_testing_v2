@@ -234,10 +234,13 @@ def _tool_initiate_customer_information_collection(
         return f"ERROR_CREATING_LEAD_INTENT: Hubo un problema al registrar el interés: {error_msg}. Por favor, informa al usuario que hubo un problema y sugiere reintentar o contactar a un agente."
 
 def _tool_submit_customer_information_for_crm(
-    lead_id: str, 
+    lead_id: str,
     customer_full_name: str,
     customer_email: str,
-    customer_phone_number: str
+    customer_phone_number: str,
+    customer_cedula: Optional[str] = None,
+    customer_address: Optional[str] = None,
+    is_iva_retention_agent: Optional[bool] = None
 ) -> str:
     """
     Python function backing the LLM tool 'submit_customer_information_for_crm'.
@@ -254,7 +257,10 @@ def _tool_submit_customer_information_for_crm(
         lead_id=lead_id,
         customer_full_name=customer_full_name,
         customer_email=customer_email,
-        customer_phone_number=customer_phone_number
+        customer_phone_number=customer_phone_number,
+        customer_cedula=customer_cedula,
+        customer_address=customer_address,
+        is_iva_retention_agent=is_iva_retention_agent,
     )
 
     if api_call_result.get("success"):
@@ -268,6 +274,39 @@ def _tool_submit_customer_information_for_crm(
         error_msg = api_call_result.get("error_message", "un error desconocido ocurrió con la API de prospectos.")
         logger.error(f"Failed to submit customer details via API for lead {lead_id}: {error_msg}")
         return f"ERROR_SUBMITTING_DETAILS_TO_CRM: Hubo un problema al guardar tus detalles: {error_msg}. Por favor, informa al usuario e intenta de nuevo o sugiere contactar a un agente."
+
+def _tool_send_whatsapp_order_summary_template(
+    customer_platform_user_id: str,
+    conversation_id: str,
+    template_variables: List[str]
+) -> str:
+    """Send WhatsApp order summary template via Support Board."""
+    logger.info(
+        f"Executing _tool_send_whatsapp_order_summary_template for user {customer_platform_user_id} conv {conversation_id}"
+    )
+    if not customer_platform_user_id or not conversation_id or not template_variables:
+        logger.error("send_whatsapp_order_summary_template called with missing data.")
+        return "ERROR_MISSING_DATA_FOR_TEMPLATE: Faltan datos requeridos para enviar la plantilla."
+
+    try:
+        result = support_board_service.send_order_confirmation_template(
+            user_id=customer_platform_user_id,
+            conversation_id=conversation_id,
+            variables=template_variables,
+        )
+        if result is not None:
+            logger.info(
+                f"Order confirmation template sent via SB for conv {conversation_id} to user {customer_platform_user_id}"
+            )
+            return "OK_TEMPLATE_SENT"
+        else:
+            logger.error(
+                f"Support Board failed to send template for conv {conversation_id} to user {customer_platform_user_id}"
+            )
+            return "ERROR_SENDING_TEMPLATE: No se pudo enviar la plantilla de resumen de pedido."
+    except Exception as exc:
+        logger.exception(f"Exception sending WhatsApp template for conv {conversation_id}: {exc}")
+        return "ERROR_SENDING_TEMPLATE: Hubo un problema interno al enviar la plantilla."
 # ===========================================================================
 
 # ---------------------------------------------------------------------------
@@ -408,6 +447,34 @@ tools_schema = [
                     }
                 },
                 "required": ["lead_id", "customer_full_name", "customer_email", "customer_phone_number"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_whatsapp_order_summary_template",
+            "description": "Envía la plantilla de resumen de pedido por WhatsApp al cliente.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "customer_platform_user_id": {
+                        "type": "string",
+                        "description": "ID del usuario en la plataforma de mensajería (número de teléfono o ID interno)."
+                    },
+                    "conversation_id": {
+                        "type": "string",
+                        "description": "ID de la conversación donde se enviará la plantilla."
+                    },
+                    "template_variables": {
+                        "type": "array",
+                        "description": "Lista de 8 cadenas con nombre, apellido, cédula, teléfono, correo, dirección, descripción del producto y total.",
+                        "items": {"type": "string"},
+                        "minItems": 8,
+                        "maxItems": 8
+                    }
+                },
+                "required": ["customer_platform_user_id", "conversation_id", "template_variables"]
             }
         }
     }
@@ -693,17 +760,32 @@ def process_new_message(
                         name_arg = args.get("customer_full_name")
                         email_arg = args.get("customer_email")
                         phone_arg = args.get("customer_phone_number")
+                        cedula_arg = args.get("customer_cedula")
+                        address_arg = args.get("customer_address")
+                        iva_arg = args.get("is_iva_retention_agent")
 
                         if lead_id_arg and name_arg and email_arg and phone_arg:
                             output_txt = _tool_submit_customer_information_for_crm(
                                 lead_id=lead_id_arg,
                                 customer_full_name=name_arg,
                                 customer_email=email_arg,
-                                customer_phone_number=phone_arg
+                                customer_phone_number=phone_arg,
+                                customer_cedula=cedula_arg,
+                                customer_address=address_arg,
+                                is_iva_retention_agent=iva_arg,
                             )
                         else:
                             logger.error(f"Missing required arguments for {fn_name} in Conv {sb_conversation_id}: lead_id, name, email, or phone.")
                             output_txt = json.dumps({"status": "error", "message": f"Error: Faltan 'lead_id', 'customer_full_name', 'customer_email', o 'customer_phone_number' para {fn_name}."}, ensure_ascii=False)
+                    elif fn_name == "send_whatsapp_order_summary_template":
+                        cust_id_arg = args.get("customer_platform_user_id") or customer_user_id
+                        conv_id_arg = args.get("conversation_id") or sb_conversation_id
+                        template_vars_arg = args.get("template_variables")
+                        output_txt = _tool_send_whatsapp_order_summary_template(
+                            customer_platform_user_id=cust_id_arg,
+                            conversation_id=conv_id_arg,
+                            template_variables=template_vars_arg,
+                        )
                     else:
                         output_txt = json.dumps({"status": "error", "message": f"Error: Herramienta desconocida '{fn_name}'."}, ensure_ascii=False)
                         logger.warning(f"LLM called unknown tool: {fn_name} in Conv {sb_conversation_id}")
