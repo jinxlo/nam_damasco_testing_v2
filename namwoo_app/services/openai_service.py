@@ -146,24 +146,23 @@ def extract_customer_info_via_llm(message_text: str) -> Optional[Dict[str, Any]]
     if not _chat_client:
         logger.error("OpenAI client for chat not initialized. Cannot extract customer info.")
         return None
-    prompt = f"""
-Extrae la siguiente información del mensaje del cliente en JSON estructurado:
 
-- full_name
-- cedula
-- telefono
-- correo
-- direccion
-- productos
-- total
+    system_prompt = (
+        "Extrae la siguiente información del mensaje del cliente. "
+        "Devuelve solo JSON válido con las claves: full_name, cedula, telefono, "
+        "correo, direccion, productos y total. Si falta algún campo, usa null. "
+        "No incluyas explicaciones ni comentarios."
+    )
+    user_prompt = f"Mensaje del cliente:\n\"\"\"{message_text}\"\"\""
 
-Ejemplo del mensaje del cliente:
-\"\"\"{message_text}\"\"\"
-    """
     try:
         response = _chat_client.chat.completions.create(
             model=current_app.config.get("OPENAI_CHAT_MODEL", DEFAULT_OPENAI_MODEL),
-            messages=[{"role": "user", "content": prompt}],
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            response_format={"type": "json_object"},
             temperature=0,
             max_tokens=256,
         )
@@ -172,6 +171,9 @@ Ejemplo del mensaje del cliente:
             logger.error("OpenAI returned empty content when extracting customer info.")
             return None
         return json.loads(content)
+    except json.JSONDecodeError as jde:
+        logger.error(f"JSON decoding error extracting customer info via OpenAI: {jde}")
+        return None
     except Exception as e:
         logger.exception(f"Error extracting customer info via OpenAI: {e}")
         return None
@@ -213,7 +215,7 @@ def _tool_initiate_customer_information_collection(
     api_call_result = lead_api_client.call_initiate_lead_intent(
         conversation_id=actual_sb_conversation_id,
         products_of_interest=api_products,
-        payment_method_preference="direct_payment", 
+        payment_method_preference="direct_payment".upper(),
         platform_user_id=platform_user_id,
         source_channel=source_channel
     )
