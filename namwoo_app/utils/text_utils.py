@@ -43,3 +43,14 @@ def strip_html_to_text(html_content: Optional[str]) -> str:
         # Fallback to an empty string to ensure clean text output,
         # especially if this text is used for embeddings or LLM prompts.
         return ""
+
+
+def split_full_name(full_name: str) -> tuple[str, str]:
+    """Split a full name string into first name and last name parts."""
+    if not full_name or not isinstance(full_name, str):
+        return "", ""
+    parts = full_name.strip().split()
+    nombre = parts[0] if parts else ""
+    apellido = " ".join(parts[1:]) if len(parts) > 1 else ""
+    return nombre, apellido
+
