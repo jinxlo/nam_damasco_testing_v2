@@ -541,3 +541,40 @@ def send_reply_to_channel(
     else:
         logger.warning(f"Unhandled conversation source '{effective_source}' for conv {conversation_id}. Message not sent.")
         return False
+
+
+# --- NEW PUBLIC FUNCTIONS: Order Confirmation Template & Sales Routing ---
+def send_order_confirmation_template(user_id: str, conversation_id: str, variables: list):
+    """Send WhatsApp order confirmation template with provided variables."""
+    payload = {
+        "function": "messaging-platforms-send-template",
+        "user": {"id": user_id},
+        "conversation_id": conversation_id,
+        "source": {"source": "wa"},
+        "template": {
+            "name": "confirmacion_datos_cliente",
+            "language": "es",
+            "parameters": variables,
+        },
+    }
+    return _call_sb_api(payload)
+
+
+def route_conversation_to_sales(conversation_id: str) -> None:
+    """Assign conversation to the Sales department and disable the bot."""
+    sales_department_id = Config.SUPPORT_BOARD_SALES_DEPARTMENT_ID
+
+    _call_sb_api(
+        {
+            "function": "update-conversation-department",
+            "conversation_id": conversation_id,
+            "department": sales_department_id,
+        }
+    )
+
+    _call_sb_api(
+        {
+            "function": "sb-human-takeover",
+            "conversation_id": conversation_id,
+        }
+    )

@@ -83,6 +83,9 @@ class Config:
     SUPPORT_BOARD_AGENT_IDS = {id.strip() for id in _agent_ids_str.split(',') if id.strip()} if _agent_ids_str else set()
     
     HUMAN_TAKEOVER_PAUSE_MINUTES = int(os.environ.get('HUMAN_TAKEOVER_PAUSE_MINUTES', 43200)) # Default to 30 days
+    # --- Department IDs (New) ---
+    SUPPORT_BOARD_SUPPORT_DEPARTMENT_ID = int(os.getenv("SUPPORT_BOARD_SUPPORT_DEPARTMENT_ID", 1))
+    SUPPORT_BOARD_SALES_DEPARTMENT_ID = int(os.getenv("SUPPORT_BOARD_SALES_DEPARTMENT_ID", 2))
     # --- MODIFICATION END ---
 
     # Note: SUPPORT_BOARD_SENDER_USER_ID was present in your original config.py but not in .env.example.
@@ -141,4 +144,6 @@ if __name__ != "__main__": # This runs when the module is imported
     # Added print statements for the new config variables
     print(f"Lead Capture API URL: {Config.LEAD_CAPTURE_API_URL if Config.LEAD_CAPTURE_API_URL else 'NOT SET'}")
     print(f"Lead Capture API Key Set: {'Yes' if Config.LEAD_CAPTURE_API_KEY else 'No'}")
+    print(f"Support Dept ID: {Config.SUPPORT_BOARD_SUPPORT_DEPARTMENT_ID}")
+    print(f"Sales Dept ID: {Config.SUPPORT_BOARD_SALES_DEPARTMENT_ID}")
     print(f"--------------------")
