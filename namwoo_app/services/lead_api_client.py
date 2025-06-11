@@ -108,11 +108,13 @@ def call_initiate_lead_intent(
 
 
 def call_submit_customer_details(
-    lead_id: str, # UUID string for the lead, obtained from call_initiate_lead_intent response
+    lead_id: str,
     customer_full_name: str,
     customer_email: str,
-    customer_phone_number: str
-    # customer_address: Optional[str] = None # Address is collected separately in current flow
+    customer_phone_number: str,
+    customer_cedula: str | None = None,
+    customer_address: str | None = None,
+    is_iva_retention_agent: bool | None = None,
 ) -> dict:
     """
     Calls the namdamasco_api service to submit/update customer contact details for an existing lead.
@@ -122,6 +124,9 @@ def call_submit_customer_details(
         customer_full_name (str): Customer's full name.
         customer_email (str): Customer's email.
         customer_phone_number (str): Customer's phone number.
+        customer_cedula (str, optional): Documento de identificación del cliente.
+        customer_address (str, optional): Dirección del cliente.
+        is_iva_retention_agent (bool, optional): Indica si el cliente es agente de retención IVA.
 
     Returns:
         dict: A dictionary with {"success": True/False, "data": response_json or None, "error_message": "..."}
@@ -139,8 +144,10 @@ def call_submit_customer_details(
     payload = {
         "customer_full_name": customer_full_name,
         "customer_email": customer_email,
-        "customer_phone_number": customer_phone_number
-        # "customer_address": customer_address # If address were part of this update
+        "customer_phone_number": customer_phone_number,
+        "customer_cedula": customer_cedula,
+        "customer_address": customer_address,
+        "is_iva_retention_agent": is_iva_retention_agent,
     }
 
     current_app.logger.info(f"Calling Lead API (Submit Details): PUT {endpoint}")
