@@ -17,6 +17,7 @@ from flask import current_app # Kept as it was in your original file
 # ── Local services ──────────────────────────────────────────────────────────────
 from . import product_service, support_board_service
 from ..config import Config
+from ..utils import conversation_location
 # from ..utils.text_utils import strip_html_to_text # Not strictly needed here if llm_processing_service pre-strips
 
 logger = logging.getLogger(__name__)
@@ -151,6 +152,11 @@ tools_schema = [
                             "en alguna de sus ubicaciones."
                         ),
                         "default": True,
+                    },
+                    "warehouse_names": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Opcional. Lista de almacenes para limitar la búsqueda según la ciudad.",
                     },
                 },
                 "required": ["query_text"],
@@ -318,6 +324,11 @@ def process_new_message_gemini_via_openai_lib( # Your original function name
         f"[Namwoo-Gemini] Handling SB Conv {sb_conversation_id} (User: {customer_user_id}, Sender: {sender_user_id}, TriggerMsg: {triggering_message_id})"
     )
 
+    if new_user_message:
+        detected_city = conversation_location.detect_city_from_text(new_user_message)
+        if detected_city:
+            conversation_location.set_conversation_city(sb_conversation_id, detected_city)
+
     if not GOOGLE_SDK_AVAILABLE or not google_gemini_client_via_openai_lib:
         logger.error("[Namwoo-Gemini] Google Gemini client (via OpenAI lib) not available.")
         support_board_service.send_reply_to_channel(
@@ -418,11 +429,15 @@ def process_new_message_gemini_via_openai_lib( # Your original function name
                     if fname == "search_local_products":
                         query = args.get("query_text")
                         filter_stock_flag = args.get("filter_stock", True) # Default as per schema
+                        warehouse_names_arg = args.get("warehouse_names")
+                        if not warehouse_names_arg:
+                            warehouse_names_arg = conversation_location.get_city_warehouses(sb_conversation_id)
                         if query:
                             search_results_list = product_service.search_local_products(
                                 query_text=query,
                                 limit=getattr(Config, "PRODUCT_SEARCH_LIMIT", 10), # Use configured limit
-                                filter_stock=filter_stock_flag
+                                filter_stock=filter_stock_flag,
+                                warehouse_names=warehouse_names_arg,
                             )
                             tool_content_str = _format_search_results_for_llm(search_results_list)
                         else:
