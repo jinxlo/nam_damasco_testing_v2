@@ -43,6 +43,7 @@ def search_local_products(
     limit: int = 30,
     filter_stock: bool = True,
     min_score: float = 0.10,
+    warehouse_names: Optional[List[str]] = None,
 ) -> Optional[List[Dict[str, Any]]]:
     if not query_text or not isinstance(query_text, str):
         logger.warning("Search query is empty or invalid.")
@@ -72,6 +73,9 @@ def search_local_products(
             )
             if filter_stock:
                 q = q.filter(Product.stock > 0)
+
+            if warehouse_names:
+                q = q.filter(Product.warehouse_name.in_(warehouse_names))
 
             # Only return products that belong to the tech division
             q = q.filter(Product.item_group_name == "DAMASCO TECNO")

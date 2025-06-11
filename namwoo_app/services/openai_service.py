@@ -15,6 +15,7 @@ from . import lead_api_client # Assuming lead_api_client.py is in the same 'serv
 # =====================================================
 from ..config import Config # For SYSTEM_PROMPT, MAX_HISTORY_MESSAGES etc.
 from ..utils import embedding_utils
+from ..utils import conversation_location
 
 
 logger = logging.getLogger(__name__)
@@ -332,13 +333,21 @@ tools_schema = [
                             "Ej: 'televisor inteligente de 55 pulgadas', 'neveras Samsung'."
                         ),
                     },
-                    "filter_stock": { 
+                    "filter_stock": {
                         "type": "boolean",
                         "description": (
                             "Opcional. Si es true (defecto), filtra solo productos con stock. "
                             "False si se quiere verificar si un producto existe en catálogo sin importar stock."
                         ),
                         "default": True,
+                    },
+                    "warehouse_names": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": (
+                            "Opcional. Lista de almacenes para limitar la búsqueda, "
+                            "derivada de la ciudad del usuario."
+                        ),
                     },
                 },
                 "required": ["query_text"],
@@ -614,6 +623,11 @@ def process_new_message(
         sb_conversation_id, sender_user_id, customer_user_id, conversation_source, triggering_message_id,
     )
 
+    if new_user_message:
+        detected_city = conversation_location.detect_city_from_text(new_user_message)
+        if detected_city:
+            conversation_location.set_conversation_city(sb_conversation_id, detected_city)
+
     conversation_data = support_board_service.get_sb_conversation_data(sb_conversation_id)
     if conversation_data is None or not conversation_data.get("messages"): 
         logger.error(f"Failed to fetch conversation data or no messages found for SB Conv {sb_conversation_id}. Aborting.")
@@ -710,10 +724,15 @@ def process_new_message(
                     if fn_name == "search_local_products":
                         query = args.get("query_text")
                         filter_stock_flag = args.get("filter_stock", True)
+                        warehouse_names_arg = args.get("warehouse_names")
+                        if not warehouse_names_arg:
+                            warehouse_names_arg = conversation_location.get_city_warehouses(sb_conversation_id)
                         if query:
                             # product_service.search_local_products needs to be updated to return priceBolivar
                             search_res = product_service.search_local_products(
-                                query_text=query, filter_stock=filter_stock_flag,
+                                query_text=query,
+                                filter_stock=filter_stock_flag,
+                                warehouse_names=warehouse_names_arg,
                             )
                             output_txt = _format_search_results_for_llm(search_res)
                         else:
