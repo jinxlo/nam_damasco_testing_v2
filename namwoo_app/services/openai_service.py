@@ -10,9 +10,6 @@ from flask import current_app # For accessing app config like OPENAI_EMBEDDING_M
 # Import local services and utils
 from . import product_service
 from . import support_board_service
-# ========== NEW IMPORT FOR LEAD API CLIENT ==========
-from . import lead_api_client # Assuming lead_api_client.py is in the same 'services' package
-# =====================================================
 from ..config import Config # For SYSTEM_PROMPT, MAX_HISTORY_MESSAGES etc.
 from ..utils import embedding_utils
 from ..utils import conversation_location
@@ -52,13 +49,6 @@ DEFAULT_OPENAI_TEMPERATURE = getattr(Config, "OPENAI_TEMPERATURE", 0.7)
 
 # ---------------------------------------------------------------------------
 # Simple in-memory conversation state cache to persist lead_id per
-# Support Board conversation. Keys are sb_conversation_id strings and
-# values are dictionaries such as {"lead_id": "<uuid>"}.
-# NOTE: This is a best-effort cache for the duration of the process. It
-# will not persist across restarts and should be replaced by a more
-# durable store in production.
-conversation_state_cache: Dict[str, Dict[str, Any]] = {}
-
 # ---------------------------------------------------------------------------
 # Embedding Generation Function
 # ---------------------------------------------------------------------------
@@ -191,130 +181,6 @@ def extract_customer_info_via_llm(message_text: str) -> Optional[Dict[str, Any]]
 # ===========================================================================
 # ========== MODIFIED LLM TOOL IMPLEMENTATION FUNCTIONS (for conversation_id) ==========
 # ===========================================================================
-def _tool_initiate_customer_information_collection(
-    actual_sb_conversation_id: str, 
-    products: list, 
-    platform_user_id: Optional[str] = None, 
-    source_channel: Optional[str] = None,
-    llm_provided_conv_id: Optional[str] = None 
-) -> str:
-    """
-    Python function backing the LLM tool 'initiate_customer_information_collection'.
-    NO CHANGE NEEDED HERE for price_bolivar, as this tool passes product info to another API.
-    The 'products' argument already has 'price', if 'priceBolivar' is needed by lead_api_client,
-    the calling logic (LLM or pre-tool logic) should ensure it's in the 'products' list.
-    """
-    logger.info(
-        f"Executing _tool_initiate_customer_information_collection. "
-        f"Using ACTUAL SB_ConvID: {actual_sb_conversation_id}. "
-        f"(LLM provided conv_id in args: {llm_provided_conv_id if llm_provided_conv_id else 'Not provided by LLM'})"
-    )
-    
-    api_products = []
-    for p_item in products: 
-        # If lead_api_client needs priceBolivar, ensure it's included here.
-        # For now, assuming it uses the primary 'price'.
-        api_products.append({
-            "sku": p_item.get("item_code", "SKU_NOT_PROVIDED"),
-            "description": p_item.get("name", "Producto no especificado"), 
-            "quantity": p_item.get("quantity", 1)
-            # "price": p_item.get("price"), # If lead_api needs it
-            # "priceBolivar": p_item.get("priceBolivar") # If lead_api needs it
-        })
-
-    api_call_result = lead_api_client.call_initiate_lead_intent(
-        conversation_id=actual_sb_conversation_id,
-        products_of_interest=api_products,
-        payment_method_preference="direct_payment".upper(),
-        platform_user_id=platform_user_id,
-        source_channel=source_channel
-    )
-
-    if api_call_result.get("success") and api_call_result.get("data", {}).get("id"):
-        lead_id = api_call_result["data"]["id"]
-        logger.info(f"Lead intent created successfully via API for SB Conv {actual_sb_conversation_id}. Lead ID: {lead_id}")
-        # Persist lead_id for this conversation in the in-memory cache
-        conversation_state_cache[actual_sb_conversation_id] = {"lead_id": lead_id}
-
-        return (
-            f"OK_LEAD_INTENT_CREATED. El ID del prospecto es {lead_id}. "
-            "El sistema ahora procederá a solicitar la información detallada del cliente según la Sección 6."
-        )
-    else:
-        error_msg = api_call_result.get("error_message", "un error desconocido ocurrió con la API de prospectos.")
-        logger.error(f"Failed to initiate lead intent via API for SB Conv {actual_sb_conversation_id}: {error_msg}")
-        return f"ERROR_CREATING_LEAD_INTENT: Hubo un problema al registrar el interés: {error_msg}. Por favor, informa al usuario que hubo un problema y sugiere reintentar o contactar a un agente."
-
-def _tool_submit_customer_information_for_crm(
-    actual_sb_conversation_id: str,
-    customer_full_name: str,
-    customer_email: str,
-    customer_phone_number: str,
-    customer_cedula: Optional[str] = None,
-    customer_address: Optional[str] = None,
-    is_iva_retention_agent: Optional[bool] = None,
-    llm_provided_lead_id: Optional[str] = None,
-) -> str:
-    """
-    Python function backing the LLM tool 'submit_customer_information_for_crm'.
-    NO CHANGE NEEDED HERE for price_bolivar.
-    """
-    logger.info(
-        f"Executing _tool_submit_customer_information_for_crm for SB_ConvID: {actual_sb_conversation_id}. LLM provided lead_id: {llm_provided_lead_id}"
-    )
-
-    # Retrieve lead_id from cached conversation state
-    conv_state = conversation_state_cache.get(actual_sb_conversation_id)
-    stored_lead_id = conv_state.get("lead_id") if conv_state else None
-    lead_id_to_use = stored_lead_id or llm_provided_lead_id
-
-    if not stored_lead_id and llm_provided_lead_id:
-        logger.warning(
-            f"No lead_id found in cache for conv {actual_sb_conversation_id}. Using LLM provided lead_id {llm_provided_lead_id}."
-        )
-    elif stored_lead_id and llm_provided_lead_id and stored_lead_id != llm_provided_lead_id:
-        logger.warning(
-            f"LLM provided lead_id {llm_provided_lead_id} differs from cached {stored_lead_id}. Using cached value."
-        )
-
-    if not all([lead_id_to_use, customer_full_name, customer_email, customer_phone_number]):
-        logger.error(
-            "Submit customer info tool called with missing required data (lead_id, name, email or phone)."
-        )
-        return (
-            "ERROR_MISSING_DATA_FOR_CRM_SUBMISSION: Falta información requerida (lead_id, nombre, email o teléfono). "
-            "Por favor, asegúrate de tener todos los datos antes de llamar a esta herramienta."
-        )
-
-    api_call_result = lead_api_client.call_submit_customer_details(
-        lead_id=lead_id_to_use,
-        customer_full_name=customer_full_name,
-        customer_email=customer_email,
-        customer_phone_number=customer_phone_number,
-        customer_cedula=customer_cedula,
-        customer_address=customer_address,
-        is_iva_retention_agent=is_iva_retention_agent,
-    )
-
-    if api_call_result.get("success"):
-        logger.info(
-            f"Customer details submitted successfully via API for LeadID: {lead_id_to_use}"
-        )
-        return (
-            f"INFO_SUBMITTED_SUCCESSFULLY. ¡Gracias, {customer_full_name}! Hemos recibido tus datos de contacto. "
-            "Para coordinar el envío (si aplica) o para la factura, también necesitaremos tu Cédula/RIF y dirección de envío completa. "
-            "¿Podrías proporcionármelos, por favor? Luego confirmaremos todo tu pedido antes de indicarte los datos para el pago directo."
-        )
-    else:
-        error_msg = api_call_result.get("error_message", "un error desconocido ocurrió con la API de prospectos.")
-        logger.error(
-            f"Failed to submit customer details via API for lead {lead_id_to_use}: {error_msg}"
-        )
-        return (
-            f"ERROR_SUBMITTING_DETAILS_TO_CRM: Hubo un problema al guardar tus detalles: {error_msg}. "
-            "Por favor, informa al usuario e intenta de nuevo o sugiere contactar a un agente."
-        )
-
 def _tool_send_whatsapp_order_summary_template(
     customer_platform_user_id: str,
     conversation_id: str,
@@ -421,82 +287,6 @@ tools_schema = [
             },
             # Output schema will implicitly include priceBolivar if product_service adds it.
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "initiate_customer_information_collection",
-            "description": (
-                "USAR ESTA HERRAMIENTA SOLO cuando el usuario ha elegido 'Pago Directo', se ha confirmado stock del producto deseado en una tienda relevante, y el usuario ha aceptado proporcionar sus datos de contacto. "
-                "Esta herramienta registra el interés inicial y los detalles del producto con el sistema. "
-                "Te instruirá sobre qué información específica (Nombre, Email, Teléfono) solicitar al usuario a continuación."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "conversation_id": { 
-                        "type": "string", 
-                        "description": "El ID único de la conversación actual (el sistema lo usará del contexto actual, pero puede ser provisto)."
-                    },
-                    "products": {
-                        "type": "array",
-                        "description": "Lista de productos en los que el usuario está interesado para este prospecto. Cada producto debe tener item_code, name, quantity, price (USD), y opcionalmente priceBolivar.", # <<< MODIFIED description
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "item_code": {"type": "string", "description": "El SKU o código de item del producto."},
-                                "name": {"type": "string", "description": "El nombre del producto."},
-                                "quantity": {"type": "integer", "description": "Cantidad deseada, por defecto 1 si no se especifica."},
-                                "price": {"type": "number", "description": "El precio unitario del producto en USD."},
-                                "priceBolivar": {"type": "number", "description": "Opcional. El precio unitario del producto en Bolívares."} # <<< ADDED priceBolivar to schema
-                            },
-                            "required": ["item_code", "name", "quantity", "price"] # priceBolivar is optional
-                        }
-                    },
-                    "platform_user_id": {
-                        "type": "string", 
-                        "description": "ID del usuario en la plataforma de mensajería (ej: número WhatsApp, ID Instagram). Opcional."
-                    },
-                    "source_channel": {
-                        "type": "string", 
-                        "description": "Canal de origen de la conversación (ej: 'whatsapp', 'instagram'). Opcional."
-                    }
-                },
-                "required": ["products"] 
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "submit_customer_information_for_crm",
-            "description": (
-                "USAR ESTA HERRAMIENTA SOLO DESPUÉS de que la herramienta 'initiate_customer_information_collection' haya sido llamada exitosamente Y DESPUÉS de haber recolectado el Nombre Completo, la Dirección de Correo Electrónico, Y el Número de Teléfono del usuario, como se te haya instruido. "
-                "Esta herramienta envía estos detalles recolectados."
-            ),
-            "parameters": { # No change needed here for price_bolivar
-                "type": "object",
-                "properties": {
-                    "lead_id": {
-                        "type": "string", 
-                        "description": "El ID de prospecto único proporcionado en la respuesta de la herramienta 'initiate_customer_information_collection'."
-                    },
-                    "customer_full_name": {
-                        "type": "string", 
-                        "description": "El nombre completo del cliente."
-                    },
-                    "customer_email": {
-                        "type": "string", 
-                        "description": "La dirección de correo electrónico del cliente."
-                    },
-                    "customer_phone_number": {
-                        "type": "string", 
-                        "description": "El número de teléfono del cliente."
-                    }
-                },
-                "required": ["lead_id", "customer_full_name", "customer_email", "customer_phone_number"]
-            }
-        }
     },
     {
         "type": "function",
@@ -795,49 +585,7 @@ def process_new_message(
                         else:
                             output_txt = json.dumps({"status": "error", "message": "Error: Faltan 'product_identifier' o 'identifier_type' para get_live_product_details."}, ensure_ascii=False)
                     
-                    elif fn_name == "initiate_customer_information_collection":
-                        products_arg = args.get("products")
-                        platform_user_id_arg = args.get("platform_user_id") 
-                        source_channel_arg = args.get("source_channel")
-                        llm_provided_conv_id_arg = args.get("conversation_id") 
-
-                        if products_arg: 
-                            output_txt = _tool_initiate_customer_information_collection(
-                                actual_sb_conversation_id=sb_conversation_id,
-                                products=products_arg, # This list of dicts now includes priceBolivar per schema
-                                platform_user_id=platform_user_id_arg,
-                                source_channel=source_channel_arg,
-                                llm_provided_conv_id=llm_provided_conv_id_arg
-                            )
-                        else:
-                            logger.error(f"Missing required 'products' argument for {fn_name} in Conv {sb_conversation_id}.")
-                            output_txt = json.dumps({"status": "error", "message": f"Error: Falta 'products' para {fn_name}."}, ensure_ascii=False)
-
-                    elif fn_name == "submit_customer_information_for_crm":
-                        lead_id_arg = args.get("lead_id")
-                        name_arg = args.get("customer_full_name")
-                        email_arg = args.get("customer_email")
-                        phone_arg = args.get("customer_phone_number")
-                        cedula_arg = args.get("customer_cedula")
-                        address_arg = args.get("customer_address")
-                        iva_arg = args.get("is_iva_retention_agent")
-
-                        if name_arg and email_arg and phone_arg:
-                            output_txt = _tool_submit_customer_information_for_crm(
-                                actual_sb_conversation_id=sb_conversation_id,
-                                customer_full_name=name_arg,
-                                customer_email=email_arg,
-                                customer_phone_number=phone_arg,
-                                customer_cedula=cedula_arg,
-                                customer_address=address_arg,
-                                is_iva_retention_agent=iva_arg,
-                                llm_provided_lead_id=lead_id_arg,
-                            )
-                        else:
-                            logger.error(
-                                f"Missing required arguments for {fn_name} in Conv {sb_conversation_id}: name, email, or phone."
-                            )
-                            output_txt = json.dumps({"status": "error", "message": f"Error: Faltan 'customer_full_name', 'customer_email', o 'customer_phone_number' para {fn_name}."}, ensure_ascii=False)
+                    # Removed lead capture tool handlers
                     elif fn_name == "send_whatsapp_order_summary_template":
                         cust_id_arg = args.get("customer_platform_user_id") or customer_user_id
                         conv_id_arg = args.get("conversation_id") or sb_conversation_id
