@@ -119,12 +119,6 @@ class Config:
         print(f"ERROR [Config]: system_prompt.txt not found at {SYSTEM_PROMPT_FILE}. Using fallback.") # Keep your original print
         SYSTEM_PROMPT = "Default fallback system prompt content here." # Or load from os.environ.get('SYSTEM_PROMPT')
 
-    # ========== NEW CONFIGURATION FOR NAMDAMASCO LEAD API SERVICE CLIENT ==========
-    LEAD_CAPTURE_API_URL = os.environ.get('LEAD_CAPTURE_API_URL')
-    LEAD_CAPTURE_API_KEY = os.environ.get('LEAD_CAPTURE_API_KEY')
-    # Optional: Instructions for LLM after lead info capture (can be hardcoded in tool response too)
-    # DIRECT_PAYMENT_INSTRUCTIONS_AFTER_LEAD_CAPTURE = os.environ.get('DIRECT_PAYMENT_INSTRUCTIONS_AFTER_LEAD_CAPTURE', "Nuestro equipo se pondrá en contacto contigo en breve para finalizar los detalles del pago y envío/retiro.")
-    # ============================================================================
 
 # --- Config Sanity Check ---
 if __name__ != "__main__": # This runs when the module is imported
@@ -142,8 +136,6 @@ if __name__ != "__main__": # This runs when the module is imported
     print(f"Damasco Receiver API URL: {Config.DAMASCO_RECEIVER_API_URL}")
     print(f"Damasco API Secret Loaded: {'Yes' if Config.DAMASCO_API_SECRET else 'No'}")
     # Added print statements for the new config variables
-    print(f"Lead Capture API URL: {Config.LEAD_CAPTURE_API_URL if Config.LEAD_CAPTURE_API_URL else 'NOT SET'}")
-    print(f"Lead Capture API Key Set: {'Yes' if Config.LEAD_CAPTURE_API_KEY else 'No'}")
     print(f"Support Dept ID: {Config.SUPPORT_BOARD_SUPPORT_DEPARTMENT_ID}")
     print(f"Sales Dept ID: {Config.SUPPORT_BOARD_SALES_DEPARTMENT_ID}")
     print(f"--------------------")
