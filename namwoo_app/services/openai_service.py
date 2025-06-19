@@ -48,15 +48,12 @@ DEFAULT_MAX_TOKENS = getattr(Config, "OPENAI_MAX_TOKENS", 1024)
 DEFAULT_OPENAI_TEMPERATURE = getattr(Config, "OPENAI_TEMPERATURE", 0.7)
 
 # ---------------------------------------------------------------------------
-# Simple in-memory conversation state cache to persist lead_id per
-# ---------------------------------------------------------------------------
 # Embedding Generation Function
 # ---------------------------------------------------------------------------
 def generate_product_embedding(text_to_embed: str) -> Optional[List[float]]:
     """
     Generates an embedding for the given product text using the configured
     OpenAI embedding model via embedding_utils.
-    NO CHANGE NEEDED HERE for price_bolivar.
     """
     if not text_to_embed or not isinstance(text_to_embed, str):
         logger.warning("openai_service.generate_product_embedding: No valid text provided.")
@@ -84,7 +81,7 @@ def get_openai_product_summary(
     item_name: Optional[str] = None
 ) -> Optional[str]:
     """
-    NO CHANGE NEEDED HERE for price_bolivar.
+    Generates a concise, factual summary for a product's plain text description.
     """
     global _chat_client
     if not _chat_client:
@@ -179,7 +176,7 @@ def extract_customer_info_via_llm(message_text: str) -> Optional[Dict[str, Any]]
         return None
 
 # ===========================================================================
-# ========== MODIFIED LLM TOOL IMPLEMENTATION FUNCTIONS (for conversation_id) ==========
+# LLM TOOL IMPLEMENTATION FUNCTIONS
 # ===========================================================================
 def _tool_send_whatsapp_order_summary_template(
     customer_platform_user_id: str,
@@ -213,7 +210,6 @@ def _tool_send_whatsapp_order_summary_template(
     except Exception as exc:
         logger.exception(f"Exception sending WhatsApp template for conv {conversation_id}: {exc}")
         return "ERROR_SENDING_TEMPLATE: Hubo un problema interno al enviar la plantilla."
-# ===========================================================================
 
 # ---------------------------------------------------------------------------
 # Tool definitions for OpenAI
@@ -226,9 +222,9 @@ tools_schema = [
             "description": ( 
                 "Busca en el catálogo de productos de la tienda Damasco usando una consulta en lenguaje natural. "
                 "Ideal cuando el usuario pregunta por tipos de productos o características. "
-                "Devuelve una lista de productos coincidentes con nombre, marca, precio (USD), precio en Bolívares (`priceBolivar`), y una descripción lista para el usuario (`llm_formatted_description`)." # <<< MODIFIED description
+                "Devuelve una lista de productos coincidentes con nombre, marca, precio (USD), precio en Bolívares (`priceBolivar`), y una descripción lista para el usuario (`llm_formatted_description`)."
             ),
-            "parameters": { # Parameters for calling the tool remain the same
+            "parameters": {
                 "type": "object",
                 "properties": {
                     "query_text": {
@@ -250,16 +246,12 @@ tools_schema = [
                         "type": "array",
                         "items": {"type": "string"},
                         "description": (
-                            "Opcional. Lista de almacenes para limitar la búsqueda, "
-                            "derivada de la ciudad del usuario."
+                            "Opcional y generalmente no se debe usar. El sistema backend lo infiere de la ciudad del usuario."
                         ),
                     },
                 },
                 "required": ["query_text"],
             },
-            # The output schema of this tool (what product_service.search_local_products returns)
-            # will now implicitly include priceBolivar if product_service adds it.
-            # No explicit "output" schema definition here for OpenAI, it infers from returned JSON.
         },
     },
     { 
@@ -267,10 +259,10 @@ tools_schema = [
         "function": {
             "name": "get_live_product_details",
             "description": ( 
-                "Obtiene información detallada y actualizada de un producto específico de Damasco, incluyendo precio (USD), precio en Bolívares (`priceBolivar`), y stock por sucursal. " # <<< MODIFIED description
+                "Obtiene información detallada y actualizada de un producto específico de Damasco, incluyendo precio (USD), precio en Bolívares (`priceBolivar`), y stock por sucursal. "
                 "Usar cuando el usuario pregunta por un producto específico (por SKU/código) o después de `search_local_products` si quiere más detalles."
             ),
-            "parameters": { # Parameters for calling the tool remain the same
+            "parameters": {
                 "type": "object",
                 "properties": {
                     "product_identifier": {
@@ -285,7 +277,6 @@ tools_schema = [
                 },
                 "required": ["product_identifier", "identifier_type"],
             },
-            # Output schema will implicitly include priceBolivar if product_service adds it.
         },
     },
     {
@@ -324,7 +315,6 @@ tools_schema = [
 def _format_sb_history_for_openai(
     sb_messages: Optional[List[Dict[str, Any]]], 
 ) -> List[Dict[str, Any]]: 
-    # NO CHANGE NEEDED HERE for price_bolivar.
     if not sb_messages:
         return []
     openai_messages: List[Dict[str, Any]] = []
@@ -371,42 +361,59 @@ def _format_sb_history_for_openai(
                 openai_messages.append({"role": role, "content": content_list_for_openai})
     return openai_messages
 
-# ---------------------------------------------------------------------------
+# ==============================================================================
+# <<< START OF MODIFIED SECTION >>>
+# ==============================================================================
 # Helper: format search results
-# ---------------------------------------------------------------------------
-def _format_search_results_for_llm(results: Optional[List[Dict[str, Any]]]) -> str:
+def _format_search_results_for_llm(results: Optional[Dict[str, Any]]) -> str:
     """
-    This function formats the output of product_service.search_local_products.
-    If product_service.search_local_products now includes 'priceBolivar' in its
-    returned dictionaries, this function will automatically include it in the JSON.
-    NO DIRECT CHANGE NEEDED HERE, but it relies on product_service output.
+    Formats the structured product search results (from product_service) into a
+    JSON string to be sent back to the LLM. It now expects a dictionary
+    containing the grouped products.
     """
+    # Handle cases where the service might return None (e.g., database error)
     if results is None:
-        return json.dumps({"status": "error", "message": "Lo siento, ocurrió un error interno al buscar en el catálogo. Por favor, intenta de nuevo más tarde."}, ensure_ascii=False)
-    if not results:
-        return json.dumps({"status": "not_found", "message": "Lo siento, no pude encontrar productos que coincidan con esa descripción en nuestro catálogo actual."}, ensure_ascii=False)
+        return json.dumps({
+            "status": "error",
+            "message": "Lo siento, ocurrió un error interno al buscar en el catálogo. Por favor, intenta de nuevo más tarde."
+        }, ensure_ascii=False)
+
+    # Handle cases where the search was successful but found no items.
+    # The 'products_grouped' key will be present but the list will be empty.
+    if not results.get("products_grouped"):
+        return json.dumps({
+            "status": "not_found",
+            "message": "Lo siento, no pude encontrar productos que coincidan con esa descripción en nuestro catálogo actual."
+        }, ensure_ascii=False)
+    
+    # If we have results, serialize the entire dictionary structure as-is.
+    # The LLM is now trained (via the system prompt) to understand this new structure.
     try:
-        # If `results` (from product_service) contains `priceBolivar`, it will be included here.
-        return json.dumps({"status": "success", "products": results}, indent=2, ensure_ascii=False)
+        # Use indent=2 for readability during debugging, but for production,
+        # you can remove it to save a few tokens.
+        return json.dumps(results, indent=2, ensure_ascii=False)
     except (TypeError, ValueError) as err:
-        logger.error(f"JSON serialisation error for search results: {err}", exc_info=True)
-        return json.dumps({"status": "error", "message": "Lo siento, hubo un problema al formatear los resultados de la búsqueda."}, ensure_ascii=False)
+        logger.error(f"JSON serialisation error for new grouped search results: {err}", exc_info=True)
+        return json.dumps({
+            "status": "error",
+            "message": "Lo siento, hubo un problema al formatear los resultados de la búsqueda."
+        }, ensure_ascii=False)
+# ==============================================================================
+# <<< END OF MODIFIED SECTION >>>
+# ==============================================================================
 
 # ---------------------------------------------------------------------------
 # Helper: live‑detail formatter
 # ---------------------------------------------------------------------------
 def _format_live_details_for_llm(details: Optional[Dict[str, Any]], identifier_type: str = "ID") -> str: 
     """
-    This function formats the output of product_service.get_live_product_details_by_sku/id.
-    If `details` from product_service now includes 'priceBolivar', we need to add it here.
+    Formats detailed product information into a JSON string for the LLM.
     """
     if details is None: 
         return json.dumps({"status": "error", "message": f"Lo siento, no pude recuperar los detalles en tiempo real para ese producto ({identifier_type})."}, ensure_ascii=False)
     if not details: 
          return json.dumps({"status": "not_found", "message": f"No se encontraron detalles para el producto con el {identifier_type} proporcionado."}, ensure_ascii=False)
     
-    # Construct product_info ensuring all expected fields are present, defaulting to sensible values.
-    # The `details` dict comes from product_service which should provide these keys.
     product_info = {
         "name": details.get("item_name", "Producto Desconocido"),
         "item_code": details.get("item_code", "N/A"),
@@ -417,13 +424,11 @@ def _format_live_details_for_llm(details: Optional[Dict[str, Any]], identifier_t
         "brand": details.get("brand", "N/A"),
         "category": details.get("category", "N/A"),
         "price": details.get("price"), # Assumed to be USD price
-        "priceBolivar": details.get("priceBolivar"), # <<< ADDED priceBolivar here
+        "priceBolivar": details.get("priceBolivar"),
         "stock": details.get("stock"),
         "warehouse_name": details.get("warehouse_name"),
         "branch_name": details.get("branch_name")
     }
-    # Filter out None values for cleaner JSON, if desired, but often LLMs handle None well.
-    # product_info = {k: v for k, v in product_info.items() if v is not None}
 
     return json.dumps({"status": "success", "product": product_info}, indent=2, ensure_ascii=False)
 
@@ -509,7 +514,7 @@ def process_new_message(
             }
             
             if tool_call_count < TOOL_CALL_RETRY_LIMIT and not (messages[-1].get("role") == "tool"):
-                 call_params["tools"] = tools_schema # tools_schema was updated
+                 call_params["tools"] = tools_schema
                  call_params["tool_choice"] = "auto"
             else: 
                 call_params.pop("tools", None)
@@ -534,7 +539,7 @@ def process_new_message(
             for tc in tool_calls:
                 fn_name = tc.function.name
                 tool_call_id = tc.id 
-                args_str = "" # Initialize to prevent UnboundLocalError
+                args_str = ""
                 try:
                     args_str = tc.function.arguments
                     args = json.loads(args_str)
@@ -542,22 +547,26 @@ def process_new_message(
                     logger.error(f"JSONDecodeError for tool {fn_name} args (Conv {sb_conversation_id}): {args_str}. Error: {json_err}")
                     args = {} 
                     output_txt = json.dumps({"status": "error", "message": f"Error: Argumentos para {fn_name} no son JSON válido: {args_str}"}, ensure_ascii=False)
-                    # Continue to append this error output
-                else: # If JSON decoding succeeds, set a default output_txt
-                    output_txt = json.dumps({"status":"error", "message":f"Error: Falló la ejecución de la herramienta {fn_name}."}, ensure_ascii=False) 
+                else:
+                    # This line is not needed, default error message is handled in the `except` block below
+                    # output_txt = json.dumps({"status":"error", "message":f"Error: Falló la ejecución de la herramienta {fn_name}."}, ensure_ascii=False)
+                    pass
                 
                 logger.info(f"OpenAI requested tool call: {fn_name} with args: {args} for Conv {sb_conversation_id}")
-                # output_txt will be overridden by tool execution below if successful
                 
                 try:
                     if fn_name == "search_local_products":
                         query = args.get("query_text")
                         filter_stock_flag = args.get("filter_stock", True)
-                        warehouse_names_arg = args.get("warehouse_names")
-                        if not warehouse_names_arg:
-                            warehouse_names_arg = conversation_location.get_city_warehouses(sb_conversation_id)
+                        
+                        warehouse_names_arg = conversation_location.get_city_warehouses(sb_conversation_id)
+                        if args.get("warehouse_names"):
+                            logger.warning(
+                                f"LLM attempted to provide 'warehouse_names': {args.get('warehouse_names')}. "
+                                f"Ignoring and using backend-derived warehouses for city: {conversation_location.get_conversation_city(sb_conversation_id)}"
+                            )
+
                         if query:
-                            # product_service.search_local_products needs to be updated to return priceBolivar
                             search_res = product_service.search_local_products(
                                 query_text=query,
                                 filter_stock=filter_stock_flag,
@@ -573,11 +582,9 @@ def process_new_message(
                         if ident and id_type:
                             details_result = None 
                             if id_type == "sku":
-                                # product_service.get_live_product_details_by_sku needs to return priceBolivar
                                 details_result = product_service.get_live_product_details_by_sku(item_code_query=ident)
                                 output_txt = _format_live_details_for_llm(details_result, identifier_type="SKU")
                             elif id_type == "composite_id":
-                                # product_service.get_live_product_details_by_id needs to return priceBolivar
                                 details_result = product_service.get_live_product_details_by_id(composite_id=ident)
                                 output_txt = _format_live_details_for_llm(details_result, identifier_type="ID Compuesto")
                             else:
@@ -585,7 +592,6 @@ def process_new_message(
                         else:
                             output_txt = json.dumps({"status": "error", "message": "Error: Faltan 'product_identifier' o 'identifier_type' para get_live_product_details."}, ensure_ascii=False)
                     
-                    # Removed lead capture tool handlers
                     elif fn_name == "send_whatsapp_order_summary_template":
                         cust_id_arg = args.get("customer_platform_user_id") or customer_user_id
                         conv_id_arg = args.get("conversation_id") or sb_conversation_id
@@ -626,8 +632,7 @@ def process_new_message(
         if "image_url" in str(bre).lower() and "invalid" in str(bre).lower():
             final_assistant_response = ("Parece que una de las imágenes en nuestra conversación no pudo ser procesada. "
                                         "¿Podrías intentarlo sin la imagen o con una diferente?")
-        else: # General BadRequestError
-            # Check if it's related to tools if possible, or just a generic message
+        else:
             error_code = getattr(bre, 'code', None)
             if error_code == 'invalid_request_error' and 'tools' in str(bre).lower():
                  final_assistant_response = ("Lo siento, hubo un problema con la forma en que intenté usar mis herramientas internas. "
@@ -650,12 +655,10 @@ def process_new_message(
             source=conversation_source, target_user_id=customer_user_id,
             conversation_details=conversation_data, triggering_message_id=triggering_message_id,
         )
-    else: # Should ideally not happen if the loop breaks with a response or an exception sets a response
+    else:
         logger.error("No final assistant response generated for Conv %s; sending generic fallback.", sb_conversation_id)
         support_board_service.send_reply_to_channel(
             conversation_id=sb_conversation_id, message_text=("Lo siento, no pude generar una respuesta en este momento. Por favor, intenta de nuevo."),
             source=conversation_source, target_user_id=customer_user_id,
             conversation_details=conversation_data, triggering_message_id=triggering_message_id,
         )
-
-# --- End of NAMWOO/services/openai_service.py ---
