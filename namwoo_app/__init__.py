@@ -3,7 +3,8 @@ import os
 import logging
 from logging.config import dictConfig
 from flask import Flask
-from .config.config import Config # Your Config class
+from .config.config import Config
+from .utils.logging_utils import JsonFormatter
 
 # --- Logging Configuration (Your original logging setup - Kept as is) ---
 log_level_env = os.environ.get('LOG_LEVEL', 'INFO').upper()
@@ -17,6 +18,10 @@ logging_config = {
     'formatters': {
         'standard': {
             'format': '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+            'datefmt': '%Y-%m-%d %H:%M:%S'
+        },
+        'json': {
+            '()': JsonFormatter,
             'datefmt': '%Y-%m-%d %H:%M:%S'
         },
     },
@@ -44,20 +49,29 @@ logging_config = {
             'maxBytes': 5242880,
             'backupCount': 3,
             'encoding': 'utf8',
+        },
+        'json_file': {
+            'level': log_level_env,
+            'class': 'logging.handlers.RotatingFileHandler',
+            'formatter': 'json',
+            'filename': getattr(Config, 'LOG_JSON_FILE', os.path.join(log_dir_path, 'app.json')),
+            'maxBytes': 10485760,
+            'backupCount': 5,
+            'encoding': 'utf8',
         }
     },
     'loggers': {
-        '': { 
-            'handlers': ['console', 'app_file'],
+        '': {
+            'handlers': ['console', 'app_file', 'json_file'],
             'level': log_level_env,
-            'propagate': True 
+            'propagate': True
         },
-        'werkzeug': {'handlers': ['console', 'app_file'], 'level': 'INFO', 'propagate': False,},
-        'sqlalchemy.engine': {'handlers': ['console', 'app_file'], 'level': 'WARNING','propagate': False,},
-        'apscheduler': {'handlers': ['console', 'app_file'], 'level': 'INFO', 'propagate': False,},
-        'sync': {'handlers': ['console', 'sync_file'], 'level': log_level_env, 'propagate': False,},
-        'celery': {'handlers': ['console', 'app_file'], 'level': log_level_env, 'propagate': False,},
-        'namwoo_app': {'handlers': ['console', 'app_file'], 'level': log_level_env, 'propagate': False}
+        'werkzeug': {'handlers': ['console', 'app_file', 'json_file'], 'level': 'INFO', 'propagate': False,},
+        'sqlalchemy.engine': {'handlers': ['console', 'app_file', 'json_file'], 'level': 'WARNING', 'propagate': False,},
+        'apscheduler': {'handlers': ['console', 'app_file', 'json_file'], 'level': 'INFO', 'propagate': False,},
+        'sync': {'handlers': ['console', 'sync_file', 'json_file'], 'level': log_level_env, 'propagate': False,},
+        'celery': {'handlers': ['console', 'app_file', 'json_file'], 'level': log_level_env, 'propagate': False,},
+        'namwoo_app': {'handlers': ['console', 'app_file', 'json_file'], 'level': log_level_env, 'propagate': False}
     }
 }
 dictConfig(logging_config)

@@ -23,6 +23,7 @@ class Config:
     os.makedirs(LOG_DIR, exist_ok=True)
     LOG_FILE = os.path.join(LOG_DIR, 'app.log')
     SYNC_LOG_FILE = os.path.join(LOG_DIR, 'sync.log')
+    LOG_JSON_FILE = os.path.join(LOG_DIR, 'app.json')
 
     # --- LLM Configuration ---
     LLM_PROVIDER = os.environ.get('LLM_PROVIDER', 'openai').lower()
