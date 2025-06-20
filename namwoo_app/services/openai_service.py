@@ -222,7 +222,7 @@ tools_schema = [
             "description": ( 
                 "Busca en el catálogo de productos de la tienda Damasco usando una consulta en lenguaje natural. "
                 "Ideal cuando el usuario pregunta por tipos de productos o características. "
-                "Devuelve una lista de productos coincidentes con nombre, marca, precio (USD), precio en Bolívares (`priceBolivar`), y una descripción lista para el usuario (`llm_formatted_description`)."
+                "Devuelve una lista de productos coincidentes con nombre, marca, precio (USD), precio en Bolívares (`priceBolivar`), especificaciones (`specifitacion`), y una descripción lista para el usuario (`llm_formatted_description`)."
             ),
             "parameters": {
                 "type": "object",
@@ -259,7 +259,7 @@ tools_schema = [
         "function": {
             "name": "get_live_product_details",
             "description": ( 
-                "Obtiene información detallada y actualizada de un producto específico de Damasco, incluyendo precio (USD), precio en Bolívares (`priceBolivar`), y stock por sucursal. "
+                "Obtiene información detallada y actualizada de un producto específico de Damasco, incluyendo precio (USD), precio en Bolívares (`priceBolivar`), especificaciones (`specifitacion`), y stock por sucursal. "
                 "Usar cuando el usuario pregunta por un producto específico (por SKU/código) o después de `search_local_products` si quiere más detalles."
             ),
             "parameters": {
@@ -421,6 +421,7 @@ def _format_live_details_for_llm(details: Optional[Dict[str, Any]], identifier_t
         "description": details.get("llm_formatted_description") or \
                        details.get("llm_summarized_description") or \
                        details.get("plain_text_description_derived", "Descripción no disponible."),
+        "specifitacion": details.get("specifitacion"),
         "brand": details.get("brand", "N/A"),
         "category": details.get("category", "N/A"),
         "price": details.get("price"), # Assumed to be USD price

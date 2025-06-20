@@ -34,7 +34,7 @@ def process_damasco_data(raw_data_list: list) -> list:
         try:
             # --- Price Handling with Decimal for precision ---
             price_usd_raw = item.get('price')
-            price_usd_decimal: Optional[Decimal] = None
+            price_usd_decimal = None
             if price_usd_raw is not None:
                 try:
                     price_usd_decimal = Decimal(str(price_usd_raw)) # Convert via string for precision
@@ -43,7 +43,7 @@ def process_damasco_data(raw_data_list: list) -> list:
             
             # <<< ADD HANDLING FOR priceBolivar >>>
             price_bolivar_raw = item.get('priceBolivar')
-            price_bolivar_decimal: Optional[Decimal] = None
+            price_bolivar_decimal = None
             if price_bolivar_raw is not None:
                 try:
                     price_bolivar_decimal = Decimal(str(price_bolivar_raw)) # Convert via string
@@ -56,6 +56,7 @@ def process_damasco_data(raw_data_list: list) -> list:
                 'item_code': str(item.get('itemCode', '')).strip(),
                 'item_name': str(item.get('itemName', '')).strip(),
                 'description': item.get('description'), # Keep as is (raw HTML)
+                'specifitacion': str(item.get('specifitacion', '')).strip(), # <<< NEW FIELD ADDED
                 'stock': int(item.get('stock', 0)), # Default to 0 if missing/invalid
                 'price': price_usd_decimal, # Store as Decimal (or float if you prefer: float(price_usd_raw or 0.0))
                 'price_bolivar': price_bolivar_decimal, # <<< ADDED new field, store as Decimal

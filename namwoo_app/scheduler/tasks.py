@@ -1,91 +1,109 @@
+# NAMWOO/scheduler/tasks.py
+
 import logging
 import time
-import traceback # For detailed exception logging
-# ADDED IMPORT FOR TYPE HINTING
+import traceback
+import requests  # <-- ADDED for making API calls
+import json      # <-- ADDED for handling JSON data
+
 from typing import Optional
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-from apscheduler.jobstores.base import JobLookupError
-from flask import Flask # Required for app context
+from flask import Flask
 
-# Import the sync service logic
-# Use relative import as services is a sibling package
-from ..services import sync_service
+# --- IMPORTANT: We NO LONGER import sync_service ---
+# from ..services import sync_service
+
+# --- We now need to import a function to get the product data ---
+# This function should live somewhere central, maybe in a new 'data_fetcher.py' service,
+# or for now, we can define a placeholder for it here.
+# Let's assume you create a new service for this.
+from ..services import data_fetcher_service  # <-- ASSUMING YOU CREATE THIS FILE
 
 logger = logging.getLogger(__name__)
-sync_logger = logging.getLogger('sync') # Use the dedicated sync logger
+sync_logger = logging.getLogger('sync')
 
 # Global scheduler instance
 scheduler = None
-SYNC_JOB_ID = 'woocommerce_product_sync'
+SYNC_JOB_ID = 'product_sync_trigger' # Renamed to reflect its new role
 
-_sync_running = False # Simple flag to prevent concurrent sync runs
+_sync_running = False
 
-def run_sync_logic(app: Flask, full_resync: bool = False):
+def run_sync_logic(app: Flask):
     """
-    The core logic that executes the sync process.
-    Separated to be callable from both the scheduler and CLI.
-    Includes a simple concurrency lock.
-
-    Args:
-        app: The Flask application instance.
-        full_resync: If True, force a full sync. Otherwise, attempt incremental (if implemented).
+    The core logic that triggers the sync process by calling the API endpoint.
+    This replaces the old method of running a long process.
     """
     global _sync_running
     if _sync_running:
-        sync_logger.warning(f"Sync job '{SYNC_JOB_ID}' attempted to start while already running. Skipping.")
+        sync_logger.warning(f"Sync trigger job '{SYNC_JOB_ID}' attempted to start while already running. Skipping.")
         return
 
     _sync_running = True
-    sync_logger.info(f"--- Starting sync job '{SYNC_JOB_ID}' (Full Resync: {full_resync}) ---")
+    sync_logger.info(f"--- Starting sync trigger job '{SYNC_JOB_ID}' ---")
     start_time = time.time()
+    
     try:
-        # Ensure execution within Flask app context
+        # We still need the app context for config values
         with app.app_context():
-            if full_resync:
-                processed, added, updated, failed = sync_service.run_full_sync(app)
-            else:
-                # Attempt incremental sync (currently a placeholder)
-                processed, added, updated, failed = sync_service.run_incremental_sync(app)
-                if processed == 0 and added == 0 and updated == 0 and failed == 0:
-                     sync_logger.info("Incremental sync skipped (not implemented), running full sync instead.")
-                     processed, added, updated, failed = sync_service.run_full_sync(app)
+            # 1. Fetch the product data from the primary source
+            sync_logger.info("Fetching latest product data from Damasco API...")
+            
+            # This function needs to be created. It's the logic that was probably
+            # hidden inside your external "Fetcher Service" before.
+            product_list = data_fetcher_service.get_all_products_from_source()
+            
+            if not product_list:
+                sync_logger.warning("No products returned from the data source. Ending sync trigger.")
+                _sync_running = False
+                return
 
-            duration = time.time() - start_time
-            sync_logger.info(f"--- Finished sync job '{SYNC_JOB_ID}' in {duration:.2f}s ---")
-            sync_logger.info(f"Sync Summary - Processed: {processed}, Added: {added}, Updated: {updated}, Failed: {failed}")
+            sync_logger.info(f"Fetched {len(product_list)} products. Sending to API endpoint for processing.")
+
+            # 2. Get API URL and Key from Flask config
+            # Ensure your app config has these values
+            api_url = app.config.get('INTERNAL_API_URL', 'http://127.0.0.1:5100/api/receive-products')
+            api_key = app.config.get('DAMASCO_API_SECRET')
+
+            if not api_key:
+                sync_logger.error("DAMASCO_API_SECRET is not configured. Cannot trigger sync.")
+                _sync_running = False
+                return
+
+            # 3. Call your own API to enqueue the Celery tasks
+            headers = {'X-API-KEY': api_key, 'Content-Type': 'application/json'}
+            
+            # Using a session for potential keep-alive benefits, though not strictly necessary
+            with requests.Session() as s:
+                response = s.post(
+                    api_url,
+                    headers=headers,
+                    data=json.dumps(product_list, default=str) # Use default=str to handle Decimals, etc.
+                )
+
+            if response.status_code == 202:
+                sync_logger.info(f"Successfully sent {len(product_list)} products to the Celery pipeline. API response: {response.status_code}")
+            else:
+                sync_logger.error(f"Failed to send products to the API endpoint. Status: {response.status_code}, Response: {response.text[:200]}")
 
     except Exception as e:
-        # Log error even if run within app_context
-        duration = time.time() - start_time
-        sync_logger.error(f"!!! Sync job '{SYNC_JOB_ID}' failed after {duration:.2f}s !!!", exc_info=True)
-        sync_logger.error(f"Traceback:\n{traceback.format_exc()}")
+        sync_logger.error(f"!!! Sync trigger job '{SYNC_JOB_ID}' failed !!!", exc_info=True)
     finally:
+        duration = time.time() - start_time
+        sync_logger.info(f"--- Finished sync trigger job '{SYNC_JOB_ID}' in {duration:.2f}s ---")
         _sync_running = False # Release the lock
-
 
 def scheduled_sync_job(app: Flask):
     """
     Wrapper function specifically designed to be called by APScheduler.
-    It ensures the sync runs within the application context.
     """
     sync_logger.info(f"Scheduler triggered for job '{SYNC_JOB_ID}'.")
-    # Determine if this scheduled run should be full or incremental based on config/logic
-    # For now, let's default scheduled runs to incremental (which falls back to full currently)
-    is_full_sync = False # Change this based on your strategy (e.g., full sync once a day?)
-    run_sync_logic(app, full_resync=is_full_sync)
+    run_sync_logic(app)
 
 
-# Corrected type hint using Optional
 def start_scheduler(app: Flask) -> Optional[BackgroundScheduler]:
     """
     Initializes and starts the APScheduler for background tasks.
-
-    Args:
-        app: The Flask application instance.
-
-    Returns:
-        The initialized BackgroundScheduler instance or None if disabled/failed.
     """
     global scheduler
     if scheduler and scheduler.running:
@@ -99,24 +117,21 @@ def start_scheduler(app: Flask) -> Optional[BackgroundScheduler]:
 
     try:
         logger.info(f"Initializing APScheduler (BackgroundScheduler). Sync interval: {interval_minutes} minutes.")
-        scheduler = BackgroundScheduler(daemon=True) # daemon=True allows app to exit even if scheduler thread is running
+        scheduler = BackgroundScheduler(daemon=True)
 
-        # Add the sync job
         scheduler.add_job(
             func=scheduled_sync_job,
-            args=[app], # Pass the Flask app instance to the job
+            args=[app],
             trigger=IntervalTrigger(minutes=interval_minutes),
             id=SYNC_JOB_ID,
-            name='WooCommerce Product Sync',
-            replace_existing=True, # Replace if job with same ID exists (e.g., on restart)
-            misfire_grace_time=300 # Allow job to run up to 5 mins late if scheduler was busy/down
+            name='Product Sync Trigger', # Renamed job
+            replace_existing=True,
+            misfire_grace_time=300
         )
 
-        # Start the scheduler
         scheduler.start()
         logger.info(f"APScheduler started successfully. Job '{SYNC_JOB_ID}' scheduled.")
 
-        # Add shutdown hook for graceful exit
         import atexit
         atexit.register(lambda: stop_scheduler())
 
@@ -134,7 +149,6 @@ def stop_scheduler():
     if scheduler and scheduler.running:
         logger.info("Attempting to shut down APScheduler...")
         try:
-            # Wait for currently running jobs to complete before shutting down? (default: True)
             scheduler.shutdown()
             logger.info("APScheduler shut down successfully.")
         except Exception as e:
@@ -145,7 +159,6 @@ def stop_scheduler():
         logger.info("APScheduler was not initialized.")
 
 
-# Corrected type hint using Optional
 def get_scheduler_status() -> dict:
     """Returns the current status of the scheduler and its jobs."""
     status = {"scheduler_running": False, "jobs": []}

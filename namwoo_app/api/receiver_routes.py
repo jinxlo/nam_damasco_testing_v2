@@ -35,6 +35,7 @@ def _convert_api_input_to_snake_case_for_task(data_camel: dict) -> dict:
         "itemCode": "item_code",
         "itemName": "item_name",
         "description": "description", # Pass raw HTML description
+        "specifitacion": "specifitacion", # Pass specification field
         "stock": "stock",
         "price": "price", # This is the primary price, e.g., USD
         "priceBolivar": "price_bolivar", # <<< --- ADDED THIS MAPPING ---

@@ -1,4 +1,4 @@
--- Namwoo Database Schema (Damasco Version) - REVISED
+-- Namwoo Database Schema (Damasco Version) - REVISED and COMPLETE
 -- PostgreSQL dialect
 
 -- 1. Enable pgvector extension (Required for vector similarity search)
@@ -13,10 +13,12 @@ CREATE TABLE products (
     -- and store it here.
     id VARCHAR(512) PRIMARY KEY, -- Increased length for "itemcode_warehousename"
 
-    item_code VARCHAR(64) NOT NULL,      -- Original Item Code from Damasco (e.g., D0007277) - No longer unique by itself
+    item_code VARCHAR(64) NOT NULL,      -- Original Item Code from Damasco (e.g., D0007277)
     item_name TEXT NOT NULL,             -- Product name
     
     -- Descriptive attributes for the product itself
+    description TEXT,                    -- Raw HTML product description from Damasco
+    specifitacion TEXT,                  -- Detailed product specifications
     category VARCHAR(128),               -- Main category
     sub_category VARCHAR(128),           -- Sub-category
     brand VARCHAR(128),                  -- Brand of the product
@@ -27,7 +29,9 @@ CREATE TABLE products (
     warehouse_name VARCHAR(255) NOT NULL, -- Warehouse name (from Damasco's 'whsName')
     branch_name VARCHAR(255),            -- Branch name (from Damasco's 'branchName')
     
-    price NUMERIC(12, 2),                -- Price
+    -- Financial and stock attributes
+    price NUMERIC(12, 2),                -- Price, typically in primary currency (e.g., USD)
+    price_bolivar NUMERIC(12, 2),        -- Price in Bolívares (Bs.)
     stock INTEGER DEFAULT 0,             -- Current stock quantity at this specific warehouse
 
     -- Embedding related fields

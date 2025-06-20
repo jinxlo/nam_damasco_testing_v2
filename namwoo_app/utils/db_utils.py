@@ -17,16 +17,21 @@ from ..config import Config # Import Config to use for logging or other settings
 
 logger = logging.getLogger(__name__)
 
+# --- FIX: Expose the ScopedSessionFactory as a public 'db_session' object. ---
+# This is the standard pattern and allows other modules (like celery_tasks)
+# to access the .remove() method for guaranteed cleanup.
+db_session: scoped_session = None
+
 # Internal "private" globals (never access these outside this file)
 _engine = None
 _SessionFactory = None
-_ScopedSessionFactory = None
+
 
 def init_db(app) -> bool:
     """
     Initialize the SQLAlchemy engine and session factories using app config.
     """
-    global _engine, _SessionFactory, _ScopedSessionFactory
+    global _engine, _SessionFactory, db_session
 
     db_uri = app.config.get('SQLALCHEMY_DATABASE_URI')
     if not db_uri:
@@ -48,17 +53,17 @@ def init_db(app) -> bool:
             logger.info("Database connection test successful.")
 
         _SessionFactory = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
-        _ScopedSessionFactory = scoped_session(_SessionFactory)
-        logger.info("SQLAlchemy SessionFactory and ScopedSessionFactory initialized successfully.")
+        db_session = scoped_session(_SessionFactory)
+        logger.info("SQLAlchemy SessionFactory and ScopedSessionFactory (db_session) initialized successfully.")
         return True
 
     except OperationalError as oe:
         logger.error(f"Database connection failed (OperationalError): {oe}", exc_info=True)
-        _engine = None; _SessionFactory = None; _ScopedSessionFactory = None
+        _engine = None; _SessionFactory = None; db_session = None
         return False
     except Exception as e:
         logger.error(f"Database initialization failed: {e}", exc_info=True)
-        _engine = None; _SessionFactory = None; _ScopedSessionFactory = None
+        _engine = None; _SessionFactory = None; db_session = None
         return False
 
 @contextmanager
@@ -67,12 +72,12 @@ def get_db_session() -> Generator[Optional[SQLAlchemySession], None, None]: # Us
     Yields a SQLAlchemy Session, handles commit/rollback, and always removes session from scope.
     Always use via: `with get_db_session() as session:`
     """
-    if not _ScopedSessionFactory:
-        logger.error("ScopedSessionFactory not initialized. Cannot create DB session.")
+    if not db_session:
+        logger.error("db_session (ScopedSessionFactory) not initialized. Cannot create DB session.")
         yield None # Make sure to yield None if there's an issue
         return
 
-    session: SQLAlchemySession = _ScopedSessionFactory()
+    session: SQLAlchemySession = db_session()
     logger.debug(f"DB Session {id(session)} acquired from ScopedSessionFactory.")
     try:
         yield session
@@ -89,8 +94,8 @@ def get_db_session() -> Generator[Optional[SQLAlchemySession], None, None]: # Us
         logger.debug(f"DB Session {id(session)} rolled back due to unexpected error.")
         raise
     finally:
-        logger.debug(f"DB Session {id(session)} scope ending. Calling ScopedSessionFactory.remove().")
-        _ScopedSessionFactory.remove()
+        logger.debug(f"DB Session {id(session)} scope ending. Calling db_session.remove().")
+        db_session.remove()
         logger.debug(f"DB Session {id(session)} removed from current scope by ScopedSessionFactory.")
 
 def create_all_tables(app) -> bool:
