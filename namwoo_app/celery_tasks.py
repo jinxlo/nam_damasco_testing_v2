@@ -166,7 +166,7 @@ def process_product_item_task(self, product_data_dict_snake: Dict[str, Any]):
 
     # --- FIX: Wrap entire task logic in a try/finally to guarantee session cleanup. ---
     try:
-        try:
+        with db_utils.get_db_session() as session:
             # ... (the rest of the original `try` block is nested inside here) ...
             try:
                 validated_product_snake = DamascoProductDataSnake(**product_data_dict_snake)
@@ -203,34 +203,37 @@ def process_product_item_task(self, product_data_dict_snake: Dict[str, Any]):
             processing_summary_logs["product_location_id"] = product_location_id
 
             existing_product_details = None
-            with db_utils.get_db_session() as read_session:
-                try:
-                    existing_product_db_entry = read_session.query(
-                        Product.description,
-                        Product.specifitacion,
-                        Product.llm_summarized_description,
-                        Product.searchable_text_content,
-                        Product.embedding
-                    ).filter_by(id=product_location_id).first()
+            try:
+                existing_product_db_entry = session.query(
+                    Product.description,
+                    Product.specifitacion,
+                    Product.llm_summarized_description,
+                    Product.searchable_text_content,
+                    Product.embedding,
+                ).filter_by(id=product_location_id).first()
 
-                    if existing_product_db_entry:
-                        existing_product_details = {
-                            "description": existing_product_db_entry.description,
-                            "specifitacion": existing_product_db_entry.specifitacion,
-                            "llm_summarized_description": existing_product_db_entry.llm_summarized_description,
-                            "searchable_text_content": existing_product_db_entry.searchable_text_content,
-                            "embedding": existing_product_db_entry.embedding 
-                        }
-                        logger.debug(f"Task {task_id} ({product_location_id}): Found existing entry details.")
-                    else:
-                        logger.debug(f"Task {task_id} ({product_location_id}): No existing entry found in DB.")
-                except (SQLAlchemyOperationalError, CeleryOperationalError) as e_db_op_read:
-                    logger.error(f"Task {task_id} ({product_location_id}): Retriable DB/Broker error reading existing entry: {e_db_op_read}", exc_info=True)
-                    raise self.retry(exc=e_db_op_read)
-                except Exception as e_read:
-                    logger.error(f"Task {task_id} ({product_location_id}): Non-retriable error reading existing entry: {e_read}", exc_info=True)
-                    processing_summary_logs["status"] = "failed_db_read_error"
-                    raise Ignore(f"Failed to read existing product details due to non-retriable error: {e_read}")
+                if existing_product_db_entry:
+                    existing_product_details = {
+                        "description": existing_product_db_entry.description,
+                        "specifitacion": existing_product_db_entry.specifitacion,
+                        "llm_summarized_description": existing_product_db_entry.llm_summarized_description,
+                        "searchable_text_content": existing_product_db_entry.searchable_text_content,
+                        "embedding": existing_product_db_entry.embedding,
+                    }
+                    logger.debug(
+                        f"Task {task_id} ({product_location_id}): Found existing entry details."
+                    )
+                else:
+                    logger.debug(
+                        f"Task {task_id} ({product_location_id}): No existing entry found in DB."
+                    )
+            except (SQLAlchemyOperationalError, CeleryOperationalError) as e_db_op_read:
+                logger.error(f"Task {task_id} ({product_location_id}): Retriable DB/Broker error reading existing entry: {e_db_op_read}", exc_info=True)
+                raise self.retry(exc=e_db_op_read)
+            except Exception as e_read:
+                logger.error(f"Task {task_id} ({product_location_id}): Non-retriable error reading existing entry: {e_read}", exc_info=True)
+                processing_summary_logs["status"] = "failed_db_read_error"
+                raise Ignore(f"Failed to read existing product details due to non-retriable error: {e_read}")
 
             llm_summary_to_use: Optional[str] = None
             raw_html_incoming = validated_product_snake.description
@@ -344,34 +347,43 @@ def process_product_item_task(self, product_data_dict_snake: Dict[str, Any]):
                  processing_summary_logs["status"] = "ignored_embedding_failed_critically"
                  raise Ignore("Critical failure obtaining embedding vector.")
 
-            with db_utils.get_db_session() as write_session:
-                success, op_type_or_error_msg = product_service.add_or_update_product_in_db(
-                    session=write_session,
-                    product_location_id=product_location_id,
-                    damasco_product_data_camel=product_data_camel,
-                    embedding_vector=embedding_vector_to_pass,
-                    text_used_for_embedding=text_to_embed,
-                    llm_summarized_description_to_store=llm_summary_to_use
-                )
-
-                processing_summary_logs["db_operation"] = op_type_or_error_msg
-                if success:
-                    logger.info(f"Task {task_id} ({product_location_id}): DB operation successful: {op_type_or_error_msg}.")
-                    processing_summary_logs["status"] = "success"
-                    processing_summary_logs["final_message"] = f"Operation: {op_type_or_error_msg}."
-                else:
-                    logger.error(f"Task {task_id} ({product_location_id}): DB operation failed. Reason: {op_type_or_error_msg}")
-                    processing_summary_logs["status"] = f"failed_db_operation"
-                    processing_summary_logs["final_message"] = f"DB Error: {op_type_or_error_msg}"
-                    non_retriable_db_errors = [
-                        "ConstraintViolation", "DataError", "InvalidTextRepresentation", 
-                        "Missing", "dimension mismatch", "Invalid embedding vector type"
-                    ]
-                    if any(err_keyword in op_type_or_error_msg for err_keyword in non_retriable_db_errors):
-                        logger.warning(f"Task {task_id} ({product_location_id}): Non-retriable DB error. Ignoring. Reason: {op_type_or_error_msg}")
-                        raise Ignore(f"Non-retriable DB error: {op_type_or_error_msg}")
-                    raise self.retry(exc=Exception(f"DB operation failed: {op_type_or_error_msg}"))
             
+            success, op_type_or_error_msg = product_service.add_or_update_product_in_db(
+                session=session,
+                product_location_id=product_location_id,
+                damasco_product_data_camel=product_data_camel,
+                embedding_vector=embedding_vector_to_pass,
+                text_used_for_embedding=text_to_embed,
+                llm_summarized_description_to_store=llm_summary_to_use,
+            )
+
+            processing_summary_logs["db_operation"] = op_type_or_error_msg
+            if success:
+                logger.info(
+                    f"Task {task_id} ({product_location_id}): DB operation successful: {op_type_or_error_msg}."
+                )
+                processing_summary_logs["status"] = "success"
+                processing_summary_logs["final_message"] = f"Operation: {op_type_or_error_msg}."
+            else:
+                logger.error(
+                    f"Task {task_id} ({product_location_id}): DB operation failed. Reason: {op_type_or_error_msg}"
+                )
+                processing_summary_logs["status"] = "failed_db_operation"
+                processing_summary_logs["final_message"] = f"DB Error: {op_type_or_error_msg}"
+                non_retriable_db_errors = [
+                    "ConstraintViolation",
+                    "DataError",
+                    "InvalidTextRepresentation",
+                    "Missing",
+                    "dimension mismatch",
+                    "Invalid embedding vector type",
+                ]
+                if any(err_keyword in op_type_or_error_msg for err_keyword in non_retriable_db_errors):
+                    logger.warning(
+                        f"Task {task_id} ({product_location_id}): Non-retriable DB error. Ignoring. Reason: {op_type_or_error_msg}"
+                    )
+                    raise Ignore(f"Non-retriable DB error: {op_type_or_error_msg}")
+                raise self.retry(exc=Exception(f"DB operation failed: {op_type_or_error_msg}"))
             logger.info(f"Task {task_id} ({product_location_id}) Processing Summary: {processing_summary_logs}")
             return processing_summary_logs
 
@@ -416,15 +428,6 @@ def process_product_item_task(self, product_data_dict_snake: Dict[str, Any]):
                 logger.info(f"Task {task_id} ({item_identifier_for_log}): Task called directly, not retrying unhandled exception.")
             logger.info(f"Task {task_id} ({item_identifier_for_log}) Processing Summary (Failed Exception): {processing_summary_logs}")
             return processing_summary_logs
-    finally:
-        # This is the crucial fix for session management in Celery.
-        # It ensures that the session is removed at the very end of the task,
-        # preventing stale sessions from being reused by the worker.
-        if db_utils.db_session:
-            db_utils.db_session.remove()
-            logger.debug(f"Task {task_id}: Database session removed via task-level finally block.")
-
-
 @celery_app.task(
     bind=True,
     base=FlaskTask,
@@ -446,8 +449,8 @@ def deactivate_product_task(self, product_id: str):
     }
     # --- FIX: Wrap entire task logic in a try/finally to guarantee session cleanup. ---
     try:
-        try:
-            with db_utils.get_db_session() as session:
+        with db_utils.get_db_session() as session:
+            try:
                 entry = session.query(Product).filter_by(id=product_id_lower).first()
                 if entry:
                     if entry.stock != 0:
@@ -499,9 +502,4 @@ def deactivate_product_task(self, product_id: str):
                      processing_summary_logs["final_message"] += " Error in retry mechanism."
     finally:
         logger.info(f"Task {task_id} Deactivation Summary: {processing_summary_logs}")
-        # This is the crucial fix for session management in Celery.
-        if db_utils.db_session:
-            db_utils.db_session.remove()
-            logger.debug(f"Task {task_id}: Database session removed via task-level finally block.")
-        # We return the summary logs *after* the session cleanup.
         return processing_summary_logs
